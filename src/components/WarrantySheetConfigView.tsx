@@ -80,7 +80,7 @@ const SAMPLE_PRODUCT: Product = {
   id: 'sample-prod-preview',
   sku: 'IPH-15PRO-256',
   barcode: '7501055301501',
-  qrCodeData: 'NEXOCELL:SKU=IPH-15PRO-256',
+  qrCodeData: 'TECNOVA:SKU=IPH-15PRO-256',
   name: 'iPhone 15 Pro 256GB Titanio Natural',
   brand: 'Apple',
   model: 'iPhone 15 Pro',

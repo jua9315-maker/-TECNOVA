@@ -230,8 +230,8 @@ export function ProductLabelModal({
 export function extractCodeToken(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return '';
-  // Parse structured NexoCell QR payload: NEXOCELL:SKU=xxx|BAR=yyy
-  if (trimmed.startsWith('NEXOCELL:')) {
+  // Parse structured TECNOVA QR payload: TECNOVA:SKU=xxx|BAR=yyy (or legacy NEXOCELL:)
+  if (trimmed.startsWith('TECNOVA:') || trimmed.startsWith('NEXOCELL:')) {
     const barMatch = trimmed.match(/BAR=([^|]+)/);
     if (barMatch && barMatch[1]) return barMatch[1].trim();
     const skuMatch = trimmed.match(/SKU=([^|]+)/);

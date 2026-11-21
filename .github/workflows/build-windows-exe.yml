@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build-windows-exe:
-    name: Compilar NexoCell Studio (.exe)
+    name: Compilar TECNOVA (.exe)
     runs-on: windows-latest
 
     steps:
@@ -37,7 +37,7 @@ jobs:
       - name: Subir ejecutables como Artifact descargable
         uses: actions/upload-artifact@v4
         with:
-          name: NexoCell-Studio-Windows-EXE
+          name: TECNOVA-Windows-EXE
           path: |
             release/*.exe
             !release/*.blockmap
@@ -48,7 +48,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
-          name: NexoCell Studio ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
+          name: TECNOVA ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
           generate_release_notes: true
           files: |
             release/*.exe

@@ -993,7 +993,7 @@ export async function seedInitialStoreCatalog(uid: string, userName: string): Pr
     {
       sku: 'IPH-15PRO-256',
       barcode: '7501055301501',
-      qrCodeData: 'NEXOCELL:SKU=IPH-15PRO-256|BAR=7501055301501',
+      qrCodeData: 'TECNOVA:SKU=IPH-15PRO-256|BAR=7501055301501',
       name: 'iPhone 15 Pro 256GB Titanio Natural',
       brand: 'Apple',
       model: 'iPhone 15 Pro',
@@ -1016,7 +1016,7 @@ export async function seedInitialStoreCatalog(uid: string, userName: string): Pr
     {
       sku: 'SAM-S24U-512',
       barcode: '8806095302402',
-      qrCodeData: 'NEXOCELL:SKU=SAM-S24U-512|BAR=8806095302402',
+      qrCodeData: 'TECNOVA:SKU=SAM-S24U-512|BAR=8806095302402',
       name: 'Samsung Galaxy S24 Ultra 512GB',
       brand: 'Samsung',
       model: 'Galaxy S24 Ultra',
@@ -1039,7 +1039,7 @@ export async function seedInitialStoreCatalog(uid: string, userName: string): Pr
     {
       sku: 'XIA-RN13P-256',
       barcode: '6941812701303',
-      qrCodeData: 'NEXOCELL:SKU=XIA-RN13P-256|BAR=6941812701303',
+      qrCodeData: 'TECNOVA:SKU=XIA-RN13P-256|BAR=6941812701303',
       name: 'Xiaomi Redmi Note 13 Pro 5G',
       brand: 'Xiaomi',
       model: 'Redmi Note 13 Pro',
@@ -1062,7 +1062,7 @@ export async function seedInitialStoreCatalog(uid: string, userName: string): Pr
     {
       sku: 'AUD-AIRP2-USBC',
       barcode: '1942537204004',
-      qrCodeData: 'NEXOCELL:SKU=AUD-AIRP2-USBC|BAR=1942537204004',
+      qrCodeData: 'TECNOVA:SKU=AUD-AIRP2-USBC|BAR=1942537204004',
       name: 'Audífonos Inalámbricos Pro USB-C',
       brand: 'Apple',
       model: 'AirPods Pro 2',
@@ -1085,7 +1085,7 @@ export async function seedInitialStoreCatalog(uid: string, userName: string): Pr
     {
       sku: 'CAR-GAN65-USBC',
       barcode: '7509988100655',
-      qrCodeData: 'NEXOCELL:SKU=CAR-GAN65-USBC|BAR=7509988100655',
+      qrCodeData: 'TECNOVA:SKU=CAR-GAN65-USBC|BAR=7509988100655',
       name: 'Cargador Rápido GaN 65W + Cable Trenzado',
       brand: 'Anker',
       model: 'PowerPort GaN 65W',
@@ -1108,7 +1108,7 @@ export async function seedInitialStoreCatalog(uid: string, userName: string): Pr
     {
       sku: 'REP-OLED-IP14',
       barcode: '7504411220146',
-      qrCodeData: 'NEXOCELL:SKU=REP-OLED-IP14|BAR=7504411220146',
+      qrCodeData: 'TECNOVA:SKU=REP-OLED-IP14|BAR=7504411220146',
       name: 'Módulo Pantalla OLED Original iPhone 14',
       brand: 'Apple',
       model: 'iPhone 14',
@@ -1233,7 +1233,7 @@ export function exportDailyReportsCsv(reports: DailyReport[]): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `reporte-ventas-nexocell-${getTodayDateKey()}.csv`;
+  a.download = `reporte-ventas-tecnova-${getTodayDateKey()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1244,7 +1244,7 @@ export async function exportDesktopBackupFile(): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `respaldo-nexocell-escritorio-${getTodayDateKey()}.json`;
+  a.download = `respaldo-tecnova-escritorio-${getTodayDateKey()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1774,7 +1774,7 @@ function mapRawRecordToProductInput(
       sku,
       barcode,
       qrCodeData:
-        pick('qrcodedata', 'qr') || `NEXOCELL:SKU=${sku}|BAR=${barcode}`,
+        pick('qrcodedata', 'qr') || `TECNOVA:SKU=${sku}|BAR=${barcode}`,
       name: clampString(name, BLUEPRINT_LIMITS.nameMax),
       brand: clampString(brand, BLUEPRINT_LIMITS.brandMax),
       model: clampString(model, BLUEPRINT_LIMITS.modelMax),

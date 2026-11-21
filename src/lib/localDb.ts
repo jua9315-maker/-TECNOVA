@@ -547,6 +547,87 @@ export async function ensureLocalDbReady(): Promise<void> {
       }
       await putOneRaw('meta', { key: 'migration_sales_tab_v1', value: true });
     }
+
+    const brandTecnovaMigration = await getOneRaw<{ key: string; value: boolean }>(
+      'meta',
+      'migration_brand_tecnova_v1'
+    );
+    if (!brandTecnovaMigration?.value) {
+      const appRow = await getOneRaw<{ key: string; value: AppAppearanceSettings }>(
+        'meta',
+        'app_appearance_settings'
+      );
+      if (appRow?.value) {
+        const nextApp = { ...appRow.value };
+        let changed = false;
+        if (nextApp.appName === 'NexoCell Studio') {
+          nextApp.appName = 'TECNOVA';
+          changed = true;
+        }
+        if (nextApp.shortName === 'NexoCell') {
+          nextApp.shortName = 'TECNOVA';
+          changed = true;
+        }
+        if (changed) {
+          await putOneRaw('meta', { key: 'app_appearance_settings', value: nextApp });
+        }
+      }
+
+      const instRow = await getOneRaw<{ key: string; value: InstalledAppSettings }>(
+        'meta',
+        'installed_app_settings'
+      );
+      if (instRow?.value) {
+        const nextInst = { ...instRow.value };
+        let changed = false;
+        if (nextInst.installedName === 'NexoCell Studio Escritorio') {
+          nextInst.installedName = 'TECNOVA Escritorio';
+          changed = true;
+        }
+        if (nextInst.installedShortName === 'NexoCell') {
+          nextInst.installedShortName = 'TECNOVA';
+          changed = true;
+        }
+        if (changed) {
+          await putOneRaw('meta', { key: 'installed_app_settings', value: nextInst });
+        }
+      }
+
+      const loginRow = await getOneRaw<{ key: string; value: LoginPresentationSettings }>(
+        'meta',
+        'login_presentation_settings'
+      );
+      if (loginRow?.value?.brandName === 'NexoCell Studio') {
+        await putOneRaw('meta', {
+          key: 'login_presentation_settings',
+          value: { ...loginRow.value, brandName: 'TECNOVA' },
+        });
+      }
+
+      const receiptRow = await getOneRaw<{ key: string; value: ReceiptSettings }>(
+        'meta',
+        'receipt_settings'
+      );
+      if (receiptRow?.value?.businessName === 'NexoCell Studio') {
+        await putOneRaw('meta', {
+          key: 'receipt_settings',
+          value: { ...receiptRow.value, businessName: 'TECNOVA' },
+        });
+      }
+
+      const devSysRow = await getOneRaw<{ key: string; value: DeveloperSystemSettings }>(
+        'meta',
+        'developer_system_settings'
+      );
+      if (devSysRow?.value?.qrCodePrefix === 'NEXOCELL') {
+        await putOneRaw('meta', {
+          key: 'developer_system_settings',
+          value: { ...devSysRow.value, qrCodePrefix: 'TECNOVA' },
+        });
+      }
+
+      await putOneRaw('meta', { key: 'migration_brand_tecnova_v1', value: true });
+    }
   })();
   return initPromise;
 }
@@ -1517,7 +1598,7 @@ export function subscribeWarrantySheetSettings(
 }
 
 export interface DesktopBackupSnapshot {
-  app: 'NexoCell Studio Escritorio';
+  app: 'TECNOVA Escritorio' | 'NexoCell Studio Escritorio';
   version: 1;
   exportedAt: string;
   receiptSettings?: ReceiptSettings;
@@ -1574,7 +1655,7 @@ export async function exportDesktopDatabaseJson(): Promise<string> {
   ]);
 
   const snapshot: DesktopBackupSnapshot = {
-    app: 'NexoCell Studio Escritorio',
+    app: 'TECNOVA Escritorio',
     version: 1,
     exportedAt: new Date().toISOString(),
     receiptSettings,
@@ -1648,7 +1729,7 @@ export async function importDesktopDatabaseJson(jsonText: string): Promise<{
     !Array.isArray(parsed.repairs) ||
     !Array.isArray(parsed.dailyReports)
   ) {
-    throw new Error('El archivo seleccionado no es un respaldo válido de NexoCell Studio.');
+    throw new Error('El archivo seleccionado no es un respaldo válido de TECNOVA.');
   }
 
   const accounts = Array.isArray(parsed.accounts) ? parsed.accounts : [];

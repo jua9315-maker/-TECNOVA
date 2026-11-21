@@ -97,7 +97,7 @@ export function LoginScreen({
               className="text-lg font-bold tracking-tight truncate"
               style={{ color: settings.textColor || '#0f172a' }}
             >
-              {settings.brandName || 'NexoCell Studio'}
+              {settings.brandName || 'TECNOVA'}
             </span>
           )}
         </div>

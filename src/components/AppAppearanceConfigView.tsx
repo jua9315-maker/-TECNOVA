@@ -676,7 +676,7 @@ export function AppAppearanceConfigView({
                   maxLength={50}
                   value={draft.appName}
                   onChange={(e) => updateDraft({ appName: e.target.value })}
-                  placeholder="Ej: NexoCell Studio"
+                  placeholder="Ej: TECNOVA"
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
                 />
               </div>
@@ -691,7 +691,7 @@ export function AppAppearanceConfigView({
                   maxLength={24}
                   value={draft.shortName}
                   onChange={(e) => updateDraft({ shortName: e.target.value })}
-                  placeholder="Ej: NexoCell"
+                  placeholder="Ej: TECNOVA"
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
                 />
               </div>
@@ -990,7 +990,7 @@ export function AppAppearanceConfigView({
                       color: previewSidebarDark ? '#f8fafc' : '#0f172a',
                     }}
                   >
-                    {draft.appName || 'NexoCell Studio'}
+                    {draft.appName || 'TECNOVA'}
                   </span>
                 </div>
 
@@ -1051,7 +1051,7 @@ export function AppAppearanceConfigView({
                     color: previewHeaderDark ? '#f8fafc' : '#0f172a',
                   }}
                 >
-                  <span className="opacity-55">{draft.shortName || 'NexoCell'}</span> / Panel
+                  <span className="opacity-55">{draft.shortName || 'TECNOVA'}</span> / Panel
                 </span>
 
                 <span

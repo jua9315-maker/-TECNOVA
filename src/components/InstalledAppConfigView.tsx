@@ -352,7 +352,7 @@ export function InstalledAppConfigView({
                     setDraft((p) => ({ ...p, installedName: e.target.value }));
                     setSavedNotice(false);
                   }}
-                  placeholder="Ej: NexoCell Studio Escritorio"
+                  placeholder="Ej: TECNOVA Escritorio"
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
@@ -382,7 +382,7 @@ export function InstalledAppConfigView({
                     setDraft((p) => ({ ...p, installedShortName: e.target.value }));
                     setSavedNotice(false);
                   }}
-                  placeholder="Ej: NexoCell"
+                  placeholder="Ej: TECNOVA"
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
@@ -543,7 +543,7 @@ export function InstalledAppConfigView({
                   <p className="text-xs font-semibold text-slate-900">
                     {draft.logoDataUrl
                       ? 'Logo personalizado activo (PNG 192×192, 512×512 y iOS 180×180)'
-                      : 'Usando ícono predeterminado de NexoCell'}
+                      : 'Usando ícono predeterminado de TECNOVA'}
                   </p>
                   <p className="text-[11px] text-slate-500">
                     Al subir tu logo se generan automáticamente todas las resoluciones requeridas para Windows, macOS, Android y iOS.
@@ -733,7 +733,7 @@ export function InstalledAppConfigView({
                     className="w-4 h-4 rounded object-contain shrink-0"
                   />
                   <span className="text-xs font-semibold truncate">
-                    {draft.installedName || 'NexoCell Studio Escritorio'}
+                    {draft.installedName || 'TECNOVA Escritorio'}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 opacity-60 shrink-0">
@@ -789,7 +789,7 @@ export function InstalledAppConfigView({
                   />
                 </div>
                 <span className="text-xs font-medium text-white truncate max-w-full">
-                  {draft.installedShortName || 'NexoCell'}
+                  {draft.installedShortName || 'TECNOVA'}
                 </span>
               </div>
 
@@ -810,7 +810,7 @@ export function InstalledAppConfigView({
                   />
                 </div>
                 <span className="text-xs font-medium text-white truncate max-w-full">
-                  {draft.installedShortName || 'NexoCell'}
+                  {draft.installedShortName || 'TECNOVA'}
                 </span>
               </div>
             </div>

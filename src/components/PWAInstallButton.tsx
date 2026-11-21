@@ -42,7 +42,7 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-base font-semibold text-slate-900">
-                  Instalar NexoCell como App de Escritorio
+                  Instalar TECNOVA como App de Escritorio
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Funciona en ventana propia y 100% sin conexión a internet.
@@ -76,7 +76,7 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({
                 <li>
                   Haz clic en el icono de{' '}
                   <strong>Instalar aplicación</strong> en la barra de direcciones (esquina superior derecha) o en{' '}
-                  <strong>Menú → Guardar y compartir → Instalar NexoCell Studio</strong>.
+                  <strong>Menú → Guardar y compartir → Instalar TECNOVA</strong>.
                 </li>
                 <li>
                   Se creará un acceso directo en tu Escritorio / Menú Inicio para abrirla como programa local sin barras de navegador y sin internet.

@@ -756,7 +756,7 @@ export function PresentationConfigView({
                       className="text-xs font-bold tracking-tight truncate"
                       style={{ color: draft.textColor }}
                     >
-                      {draft.brandName || 'NexoCell Studio'}
+                      {draft.brandName || 'TECNOVA'}
                     </span>
                   )}
                 </div>

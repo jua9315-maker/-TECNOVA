@@ -1,9 +1,9 @@
 {
-  "name": "nexocell-studio",
+  "name": "tecnova",
   "private": true,
   "version": "1.0.0",
   "description": "Sistema de escritorio sin conexión para inventario móvil QR, punto de venta, garantías, reparaciones y reportes diarios.",
-  "author": "NexoCell Studio",
+  "author": "TECNOVA",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -50,8 +50,8 @@
     "vite-plugin-pwa": "^2.0.0"
   },
   "build": {
-    "appId": "com.nexocell.studio",
-    "productName": "NexoCell Studio",
+    "appId": "com.tecnova.desktop",
+    "productName": "TECNOVA",
     "directories": {
       "output": "release"
     },
@@ -81,11 +81,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "NexoCell Studio",
-      "artifactName": "NexoCell-Studio-Instalador-${version}.exe"
+      "shortcutName": "TECNOVA",
+      "artifactName": "TECNOVA-Instalador-${version}.exe"
     },
     "portable": {
-      "artifactName": "NexoCell-Studio-Portable-${version}.exe"
+      "artifactName": "TECNOVA-Portable-${version}.exe"
     }
   }
 }

@@ -400,7 +400,7 @@ export interface ReceiptSettings {
 }
 
 export const DEFAULT_RECEIPT_SETTINGS: ReceiptSettings = {
-  businessName: 'NexoCell Studio',
+  businessName: 'TECNOVA',
   tagline: 'Venta de Celulares, Accesorios y Servicio Técnico',
   taxId: '',
   phone: '+52 55 0000 0000',
@@ -467,7 +467,7 @@ export const LOGIN_HERO_PRESETS: { id: string; label: string; url: string }[] = 
 ];
 
 export const DEFAULT_LOGIN_PRESENTATION_SETTINGS: LoginPresentationSettings = {
-  brandName: 'NexoCell Studio',
+  brandName: 'TECNOVA',
   showBrandName: true,
   logoDataUrl: '',
   showLogo: true,
@@ -645,8 +645,8 @@ export interface AppAppearanceSettings {
 }
 
 export const DEFAULT_APP_APPEARANCE_SETTINGS: AppAppearanceSettings = {
-  appName: 'NexoCell Studio',
-  shortName: 'NexoCell',
+  appName: 'TECNOVA',
+  shortName: 'TECNOVA',
   logoDataUrl: '',
   showLogoInSidebar: true,
   fontStyle: 'modern',
@@ -716,8 +716,8 @@ export interface InstalledAppSettings {
 }
 
 export const DEFAULT_INSTALLED_APP_SETTINGS: InstalledAppSettings = {
-  installedName: 'NexoCell Studio Escritorio',
-  installedShortName: 'NexoCell',
+  installedName: 'TECNOVA Escritorio',
+  installedShortName: 'TECNOVA',
   description:
     'Sistema de escritorio sin conexión para inventario móvil QR, punto de venta, garantías, reparaciones y reportes diarios.',
   themeColor: '#0f172a',
@@ -776,7 +776,7 @@ export interface DeveloperSystemSettings {
 
 export const DEFAULT_DEVELOPER_SYSTEM_SETTINGS: DeveloperSystemSettings = {
   defaultStoreBranch: 'Sucursal Principal · Mostrador',
-  qrCodePrefix: 'NEXOCELL',
+  qrCodePrefix: 'TECNOVA',
   defaultPhoneWarrantyMonths: 12,
   defaultAccessoryWarrantyMonths: 3,
   lowStockDefaultMin: 2,

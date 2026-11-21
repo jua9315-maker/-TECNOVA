@@ -207,9 +207,9 @@ function WorkspaceApp() {
 
   useEffect(() => {
     const effectiveName =
-      installedApp.installedName || appAppearance.appName || 'NexoCell Studio';
+      installedApp.installedName || appAppearance.appName || 'TECNOVA';
     const effectiveShort =
-      installedApp.installedShortName || appAppearance.shortName || 'NexoCell';
+      installedApp.installedShortName || appAppearance.shortName || 'TECNOVA';
     document.title = `${effectiveName} — Gestión de Tienda`;
 
     const themeMeta = document.querySelector<HTMLMetaElement>(
@@ -523,7 +523,7 @@ function WorkspaceApp() {
                 isSidebarDark ? 'text-white' : 'text-slate-900'
               }`}
             >
-              {appAppearance.appName || 'NexoCell Studio'}
+              {appAppearance.appName || 'TECNOVA'}
             </span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -715,7 +715,7 @@ function WorkspaceApp() {
                     isSidebarDark ? 'text-white' : 'text-slate-900'
                   }`}
                 >
-                  {appAppearance.appName || 'NexoCell Studio'}
+                  {appAppearance.appName || 'TECNOVA'}
                 </span>
               </div>
               <button
@@ -884,7 +884,7 @@ function WorkspaceApp() {
                   isHeaderDark ? 'text-slate-400' : 'text-slate-400'
                 }`}
               >
-                {appAppearance.shortName || appAppearance.appName || 'NexoCell'}
+                {appAppearance.shortName || appAppearance.appName || 'TECNOVA'}
               </span>
               <span
                 className={`hidden sm:inline ${

@@ -97,7 +97,7 @@ function createMainWindow(port) {
     height: 860,
     minWidth: 1024,
     minHeight: 680,
-    title: 'NexoCell Studio',
+    title: 'TECNOVA',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     backgroundColor: '#f8fafc',
@@ -144,7 +144,7 @@ if (!gotSingleInstanceLock) {
       server = started.server;
       createMainWindow(started.port);
     } catch (err) {
-      console.error('Error al iniciar NexoCell Studio:', err);
+      console.error('Error al iniciar TECNOVA:', err);
       app.quit();
     }
   });

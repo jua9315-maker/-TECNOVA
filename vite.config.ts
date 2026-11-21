@@ -20,8 +20,8 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: 'NexoCell Studio Escritorio',
-          short_name: 'NexoCell',
+          name: 'TECNOVA Escritorio',
+          short_name: 'TECNOVA',
           description:
             'Sistema de escritorio sin conexión para inventario móvil QR, punto de venta, garantías, reparaciones y reportes diarios.',
           theme_color: '#0f172a',

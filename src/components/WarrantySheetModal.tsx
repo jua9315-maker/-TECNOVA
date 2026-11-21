@@ -53,7 +53,7 @@ export function WarrantySheetDocument({
   );
 
   const effectiveBusinessName =
-    ws.businessName.trim() || settings.businessName || 'NexoCell Studio';
+    ws.businessName.trim() || settings.businessName || 'TECNOVA';
   const effectiveTagline = ws.tagline.trim() || settings.tagline;
   const effectiveAddress = ws.address.trim() || settings.address;
   const effectivePhone = ws.phone.trim() || settings.phone;

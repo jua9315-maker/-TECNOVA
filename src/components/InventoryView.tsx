@@ -193,7 +193,7 @@ export function InventoryView({
     const sku = prefillCode
       ? sanitizeCode(`SKU-${prefillCode.slice(0, 12)}`, 40)
       : `CEL-${randomDigits.slice(0, 5)}`;
-    const prefix = developerSettings.qrCodePrefix || 'NEXOCELL';
+    const prefix = developerSettings.qrCodePrefix || 'TECNOVA';
     setEditingProduct(null);
     setFormError(null);
     setAddingCategory(false);
@@ -291,9 +291,10 @@ export function InventoryView({
     setSaving(true);
     setFormError(null);
     try {
+      const qrPrefix = developerSettings.qrCodePrefix || 'TECNOVA';
       const nextForm: ProductInput = {
         ...form,
-        qrCodeData: form.qrCodeData.trim() || `NEXOCELL:SKU=${form.sku}|BAR=${form.barcode}`,
+        qrCodeData: form.qrCodeData.trim() || `${qrPrefix}:SKU=${form.sku}|BAR=${form.barcode}`,
       };
       await createOrUpdateProduct(uid, nextForm, editingProduct, viewRole === 'admin');
       setModalOpen(false);
@@ -1000,10 +1001,11 @@ export function InventoryView({
                     type="button"
                     onClick={() => {
                       const code = `750${Math.floor(1000000000 + Math.random() * 8999999999)}`;
+                      const qrPrefix = developerSettings.qrCodePrefix || 'TECNOVA';
                       setForm((prev) => ({
                         ...prev,
                         barcode: code,
-                        qrCodeData: `NEXOCELL:SKU=${prev.sku}|BAR=${code}`,
+                        qrCodeData: `${qrPrefix}:SKU=${prev.sku}|BAR=${code}`,
                       }));
                     }}
                     className="text-xs font-medium text-blue-700 hover:underline"
@@ -1022,10 +1024,11 @@ export function InventoryView({
                       value={form.sku}
                       onChange={(e) => {
                         const sku = sanitizeCode(e.target.value, 40);
+                        const qrPrefix = developerSettings.qrCodePrefix || 'TECNOVA';
                         setForm({
                           ...form,
                           sku,
-                          qrCodeData: `NEXOCELL:SKU=${sku}|BAR=${form.barcode}`,
+                          qrCodeData: `${qrPrefix}:SKU=${sku}|BAR=${form.barcode}`,
                         });
                       }}
                       className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-lg"
@@ -1040,10 +1043,11 @@ export function InventoryView({
                       value={form.barcode}
                       onChange={(e) => {
                         const barcode = sanitizeCode(e.target.value, 64);
+                        const qrPrefix = developerSettings.qrCodePrefix || 'TECNOVA';
                         setForm({
                           ...form,
                           barcode,
-                          qrCodeData: `NEXOCELL:SKU=${form.sku}|BAR=${barcode}`,
+                          qrCodeData: `${qrPrefix}:SKU=${form.sku}|BAR=${barcode}`,
                         });
                       }}
                       className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-lg"

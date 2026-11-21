@@ -18,8 +18,11 @@ import {
 import {
   APP_CURRENCY_OPTIONS,
   DEFAULT_APP_APPEARANCE_SETTINGS,
+  extractHexStops,
+  extractPrimaryHex,
   formatCurrency,
   getLoginFontFamilyCss,
+  isCssGradient,
   isHexColorDark,
   type AppAppearanceSettings,
   type AppCurrencyCode,
@@ -79,25 +82,25 @@ const THEME_PRESETS: {
     },
   },
   {
-    id: 'amber',
-    label: 'Ámbar Taller',
+    id: 'aurora-studio',
+    label: 'Aurora Multicolor',
     patch: {
-      accentColor: '#b45309',
-      primaryColor: '#78350f',
-      sidebarBgColor: '#ffffff',
-      headerBgColor: '#ffffff',
-      canvasBgColor: '#fafaf9',
+      accentColor: '#6d28d9',
+      primaryColor: 'linear-gradient(135deg, #6d28d9 0%, #2563eb 100%)',
+      sidebarBgColor: 'linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%)',
+      headerBgColor: 'linear-gradient(90deg, #ffffff 0%, #eef2ff 100%)',
+      canvasBgColor: 'linear-gradient(135deg, #eef2ff 0%, #f0f9ff 50%, #fdf4ff 100%)',
     },
   },
   {
-    id: 'crimson',
-    label: 'Carmín Moderno',
+    id: 'sunset-prism',
+    label: 'Atardecer Pastel',
     patch: {
-      accentColor: '#be123c',
-      primaryColor: '#1e293b',
-      sidebarBgColor: '#1e293b',
+      accentColor: '#e11d48',
+      primaryColor: 'linear-gradient(135deg, #be123c 0%, #ea580c 100%)',
+      sidebarBgColor: 'linear-gradient(180deg, #fff1f2 0%, #fff7ed 100%)',
       headerBgColor: '#ffffff',
-      canvasBgColor: '#f8fafc',
+      canvasBgColor: 'linear-gradient(135deg, #fff1f2 0%, #fefce8 55%, #f0f9ff 100%)',
     },
   },
 ];
@@ -114,11 +117,98 @@ const FONT_OPTIONS: {
   { id: 'technical', label: 'Técnica Mono', sample: 'Aa Bb 123', css: 'var(--font-mono)' },
 ];
 
-const ACCENT_SWATCHES = ['#1d4ed8', '#047857', '#b45309', '#be123c', '#6d28d9', '#0f172a'];
-const PRIMARY_SWATCHES = ['#0f172a', '#1e3a8a', '#064e3b', '#78350f', '#4c1d95', '#881337'];
-const SIDEBAR_SWATCHES = ['#ffffff', '#f8fafc', '#0f172a', '#1e293b', '#172554'];
-const HEADER_SWATCHES = ['#ffffff', '#f8fafc', '#f1f5f9', '#0f172a'];
-const CANVAS_SWATCHES = ['#f8fafc', '#f1f5f9', '#fafaf9', '#f0fdf4', '#eff6ff'];
+const ACCENT_PALETTE = [
+  '#1d4ed8', '#2563eb', '#0284c7', '#0891b2',
+  '#047857', '#059669', '#65a30d', '#ca8a04',
+  '#d97706', '#ea580c', '#dc2626', '#be123c',
+  '#db2777', '#9333ea', '#6d28d9', '#0f172a',
+];
+
+const PRIMARY_PALETTE = [
+  '#0f172a', '#1e293b', '#1e3a8a', '#1d4ed8',
+  '#0369a1', '#0f766e', '#064e3b', '#047857',
+  '#3f6212', '#92400e', '#9a3412', '#991b1b',
+  '#881337', '#86198f', '#4c1d95', '#312e81',
+];
+
+const SIDEBAR_PALETTE = [
+  '#ffffff', '#f8fafc', '#f1f5f9', '#eff6ff',
+  '#ecfdf5', '#fefce8', '#fdf2f8', '#f5f3ff',
+  '#0f172a', '#1e293b', '#172554', '#042f2e',
+  '#064e3b', '#3b0764', '#4c0519', '#18181b',
+];
+
+const HEADER_PALETTE = [
+  '#ffffff', '#f8fafc', '#f1f5f9', '#e2e8f0',
+  '#eff6ff', '#ecfeff', '#ecfdf5', '#fefce8',
+  '#fff1f2', '#faf5ff', '#0f172a', '#1e293b',
+  '#172554', '#064e3b', '#3b0764', '#18181b',
+];
+
+const CANVAS_PALETTE = [
+  '#f8fafc', '#f1f5f9', '#fafaf9', '#ffffff',
+  '#eff6ff', '#f0f9ff', '#ecfeff', '#f0fdf4',
+  '#fefce8', '#fff7ed', '#fff1f2', '#fdf4ff',
+  '#f5f3ff', '#e2e8f0', '#0f172a', '#18181b',
+];
+
+type GradientPreset = {
+  label: string;
+  css: string;
+};
+
+const DARK_OR_VIVID_GRADIENTS: GradientPreset[] = [
+  { label: 'Índigo Eléctrico', css: 'linear-gradient(135deg, #1d4ed8 0%, #6d28d9 100%)' },
+  { label: 'Océano Profundo', css: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)' },
+  { label: 'Esmeralda Viva', css: 'linear-gradient(135deg, #047857 0%, #0d9488 100%)' },
+  { label: 'Atardecer Coral', css: 'linear-gradient(135deg, #e11d48 0%, #f59e0b 100%)' },
+  { label: 'Neón Cibernético', css: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #9333ea 100%)' },
+  { label: 'Noche Galaxia', css: 'linear-gradient(180deg, #090d16 0%, #1e1b4b 55%, #312e81 100%)' },
+  { label: 'Bosque Nocturno', css: 'linear-gradient(180deg, #022c22 0%, #064e3b 55%, #0f766e 100%)' },
+  { label: 'Prisma Arcoíris', css: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 50%, #06b6d4 100%)' },
+];
+
+const LIGHT_OR_SOFT_GRADIENTS: GradientPreset[] = [
+  { label: 'Aurora Pastel', css: 'linear-gradient(135deg, #eef2ff 0%, #e0f2fe 50%, #fae8ff 100%)' },
+  { label: 'Brisa Menta', css: 'linear-gradient(135deg, #ecfdf5 0%, #e0f2fe 100%)' },
+  { label: 'Atardecer Suave', css: 'linear-gradient(135deg, #fff1f2 0%, #fef3c7 55%, #e0e7ff 100%)' },
+  { label: 'Cielo Lavanda', css: 'linear-gradient(135deg, #f5f3ff 0%, #eff6ff 100%)' },
+  { label: 'Durazno Claro', css: 'linear-gradient(135deg, #fff7ed 0%, #fce7f3 100%)' },
+  { label: 'Cristal Nórdico', css: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)' },
+  { label: 'Océano Vivo', css: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #0e7490 100%)' },
+  { label: 'Prisma Vibrante', css: 'linear-gradient(135deg, #dbeafe 0%, #fce7f3 50%, #fef9c3 100%)' },
+];
+
+type GradientDirection = '135deg' | '90deg' | '180deg' | 'radial';
+
+const GRADIENT_DIRECTIONS: { id: GradientDirection; label: string }[] = [
+  { id: '135deg', label: '↘ Diagonal' },
+  { id: '90deg', label: '→ Horizontal' },
+  { id: '180deg', label: '↓ Vertical' },
+  { id: 'radial', label: '◎ Radial' },
+];
+
+function detectGradientDirection(css: string): GradientDirection {
+  if (/radial-gradient/i.test(css)) return 'radial';
+  if (/90deg/i.test(css)) return '90deg';
+  if (/180deg/i.test(css)) return '180deg';
+  return '135deg';
+}
+
+function buildCssGradient(
+  direction: GradientDirection,
+  c1: string,
+  c2: string,
+  c3?: string
+): string {
+  const stops = c3
+    ? `${c1} 0%, ${c2} 50%, ${c3} 100%`
+    : `${c1} 0%, ${c2} 100%`;
+  if (direction === 'radial') {
+    return `radial-gradient(circle at top left, ${stops})`;
+  }
+  return `linear-gradient(${direction}, ${stops})`;
+}
 
 function readLogoFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -170,47 +260,291 @@ function readLogoFile(file: File): Promise<string> {
   });
 }
 
-function ColorSwatchField({
+function ColorPaletteField({
   label,
   value,
-  swatches,
+  palette,
+  gradientPresets,
+  allowGradient = true,
+  defaultGradientStops,
   onChange,
 }: {
   label: string;
   value: string;
-  swatches: string[];
-  onChange: (hex: string) => void;
+  palette: string[];
+  gradientPresets?: GradientPreset[];
+  allowGradient?: boolean;
+  defaultGradientStops: [string, string];
+  onChange: (nextValue: string) => void;
 }) {
+  const valueIsGradient = isCssGradient(value);
+  const [mode, setMode] = useState<'solid' | 'gradient'>(
+    allowGradient && valueIsGradient ? 'gradient' : 'solid'
+  );
+  const [hexDraft, setHexDraft] = useState(() =>
+    extractPrimaryHex(value, palette[0] || '#0f172a')
+  );
+
+  const stops = extractHexStops(value);
+  const c1 = stops[0] || extractPrimaryHex(value, defaultGradientStops[0]);
+  const c2 = stops[1] || defaultGradientStops[1];
+  const c3 = stops[2] || '';
+  const direction = valueIsGradient ? detectGradientDirection(value) : '135deg';
+
+  useEffect(() => {
+    if (allowGradient && isCssGradient(value)) {
+      setMode('gradient');
+    } else if (!isCssGradient(value)) {
+      setMode('solid');
+      setHexDraft(extractPrimaryHex(value, palette[0] || '#0f172a'));
+    }
+  }, [value, allowGradient, palette]);
+
+  const solidPickerValue = extractPrimaryHex(value, palette[0] || '#0f172a');
+
+  const handleHexInputChange = (raw: string) => {
+    setHexDraft(raw);
+    const trimmed = raw.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+      onChange(trimmed.toLowerCase());
+    } else if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+      const c = trimmed.slice(1).toLowerCase();
+      onChange(`#${c[0]}${c[0]}${c[1]}${c[1]}${c[2]}${c[2]}`);
+    }
+  };
+
   return (
-    <div className="p-3 border border-slate-200 rounded-lg space-y-2 bg-white">
+    <div className="p-3.5 border border-slate-200 rounded-xl space-y-3 bg-white">
+      {/* Header row with live swatch preview */}
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium text-slate-700 truncate">
-          {label}
-        </span>
-        <input
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-6 h-6 rounded border border-slate-200 cursor-pointer shrink-0"
-          aria-label={label}
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {swatches.map((hex) => (
-          <button
-            key={hex}
-            type="button"
-            onClick={() => onChange(hex)}
-            style={{ backgroundColor: hex }}
-            className={`w-5 h-5 rounded-full border ${
-              value.toLowerCase() === hex.toLowerCase()
-                ? 'ring-2 ring-blue-600 ring-offset-1 border-slate-400'
-                : 'border-slate-300'
-            }`}
-            title={hex}
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span
+            className="w-7 h-7 rounded-lg border border-slate-300 shadow-2xs shrink-0"
+            style={{ background: value }}
           />
-        ))}
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-900 truncate">
+              {label}
+            </p>
+            <p className="text-[10px] font-mono text-slate-500 truncate">
+              {valueIsGradient ? 'Fondo multicolor' : solidPickerValue.toUpperCase()}
+            </p>
+          </div>
+        </div>
+
+        {allowGradient && (
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setMode('solid')}
+              className={`px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+                mode === 'solid'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Color
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('gradient')}
+              className={`px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+                mode === 'gradient'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Multicolor
+            </button>
+          </div>
+        )}
       </div>
+
+      {mode === 'solid' ? (
+        <div className="space-y-2.5">
+          {/* Full curated palette grid */}
+          <div className="grid grid-cols-8 gap-1.5">
+            {palette.map((hex) => {
+              const selected =
+                !valueIsGradient &&
+                value.toLowerCase() === hex.toLowerCase();
+              return (
+                <button
+                  key={hex}
+                  type="button"
+                  onClick={() => onChange(hex)}
+                  style={{ backgroundColor: hex }}
+                  className={`h-6 w-full rounded-md border transition-transform hover:scale-105 ${
+                    selected
+                      ? 'ring-2 ring-slate-900 ring-offset-1 border-white'
+                      : 'border-slate-300/80'
+                  }`}
+                  title={hex}
+                  aria-label={`${label}: ${hex}`}
+                />
+              );
+            })}
+          </div>
+
+          {/* Custom color wheel + free HEX input */}
+          <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+            <label className="relative inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg cursor-pointer shrink-0">
+              <input
+                type="color"
+                value={solidPickerValue}
+                onChange={(e) => onChange(e.target.value)}
+                className="w-4 h-4 rounded border-0 p-0 bg-transparent cursor-pointer"
+                aria-label={`Elegir color personalizado para ${label}`}
+              />
+              <span>Elegir</span>
+            </label>
+            <input
+              type="text"
+              value={hexDraft}
+              onChange={(e) => handleHexInputChange(e.target.value)}
+              onBlur={() =>
+                setHexDraft(extractPrimaryHex(value, palette[0] || '#0f172a'))
+              }
+              maxLength={7}
+              placeholder="#1d4ed8"
+              className="flex-1 min-w-0 px-2.5 py-1.5 text-[11px] font-mono uppercase border border-slate-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:border-blue-600"
+              aria-label={`Código HEX para ${label}`}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {/* Multicolor gradient presets */}
+          {gradientPresets && gradientPresets.length > 0 && (
+            <div className="grid grid-cols-4 gap-1.5">
+              {gradientPresets.map((preset) => {
+                const selected =
+                  value.trim().toLowerCase() === preset.css.toLowerCase();
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => onChange(preset.css)}
+                    style={{ background: preset.css }}
+                    className={`h-7 rounded-md border transition-transform hover:scale-[1.03] ${
+                      selected
+                        ? 'ring-2 ring-slate-900 ring-offset-1 border-white'
+                        : 'border-slate-300/80'
+                    }`}
+                    title={preset.label}
+                    aria-label={preset.label}
+                  />
+                );
+              })}
+            </div>
+          )}
+
+          {/* Custom multicolor gradient builder */}
+          <div className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-lg space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+                Mezcla personalizada
+              </span>
+              <div className="flex items-center gap-1">
+                {GRADIENT_DIRECTIONS.map((dir) => (
+                  <button
+                    key={dir.id}
+                    type="button"
+                    onClick={() =>
+                      onChange(buildCssGradient(dir.id, c1, c2, c3 || undefined))
+                    }
+                    className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${
+                      direction === dir.id
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                    title={dir.label}
+                  >
+                    {dir.label.split(' ')[0]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded-md cursor-pointer text-[11px] font-mono text-slate-700">
+                <input
+                  type="color"
+                  value={c1}
+                  onChange={(e) =>
+                    onChange(
+                      buildCssGradient(
+                        direction,
+                        e.target.value,
+                        c2,
+                        c3 || undefined
+                      )
+                    )
+                  }
+                  className="w-4 h-4 rounded border-0 p-0 bg-transparent cursor-pointer"
+                  aria-label="Color 1 del fondo"
+                />
+                <span>1</span>
+              </label>
+
+              <label className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded-md cursor-pointer text-[11px] font-mono text-slate-700">
+                <input
+                  type="color"
+                  value={c2}
+                  onChange={(e) =>
+                    onChange(
+                      buildCssGradient(
+                        direction,
+                        c1,
+                        e.target.value,
+                        c3 || undefined
+                      )
+                    )
+                  }
+                  className="w-4 h-4 rounded border-0 p-0 bg-transparent cursor-pointer"
+                  aria-label="Color 2 del fondo"
+                />
+                <span>2</span>
+              </label>
+
+              {c3 ? (
+                <div className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-mono text-slate-700">
+                  <input
+                    type="color"
+                    value={c3}
+                    onChange={(e) =>
+                      onChange(
+                        buildCssGradient(direction, c1, c2, e.target.value)
+                      )
+                    }
+                    className="w-4 h-4 rounded border-0 p-0 bg-transparent cursor-pointer"
+                    aria-label="Color 3 del fondo"
+                  />
+                  <span>3</span>
+                  <button
+                    type="button"
+                    onClick={() => onChange(buildCssGradient(direction, c1, c2))}
+                    className="ml-0.5 text-slate-400 hover:text-red-600 font-sans font-bold"
+                    title="Quitar 3er color"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange(buildCssGradient(direction, c1, c2, '#ec4899'))
+                  }
+                  className="px-2 py-1 text-[10px] font-medium text-slate-700 bg-white border border-dashed border-slate-300 hover:border-slate-500 rounded-md"
+                >
+                  + 3er color
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -273,7 +607,8 @@ export function AppAppearanceConfigView({
   const previewSidebarDark = isHexColorDark(draft.sidebarBgColor);
   const previewHeaderDark = isHexColorDark(draft.headerBgColor);
   const previewPrimaryDark = isHexColorDark(draft.primaryColor);
-  const previewAccentDark = isHexColorDark(draft.accentColor);
+  const previewAccentHex = extractPrimaryHex(draft.accentColor, '#1d4ed8');
+  const previewAccentDark = isHexColorDark(previewAccentHex);
   const previewFontCss = getLoginFontFamilyCss(draft.fontStyle);
 
   const previewCurrencyLabel = formatCurrency(1249.5, draft.currencyCode);
@@ -432,7 +767,7 @@ export function AppAppearanceConfigView({
           <div className="space-y-4 pt-2">
             <h2 className="text-sm font-semibold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
               <Palette className="w-4 h-4 text-blue-700" />
-              Temas Rápidos y Colores de Toda la App
+              Temas Rápidos y Paleta de Colores / Fondos Multicolor
             </h2>
 
             <div>
@@ -462,15 +797,15 @@ export function AppAppearanceConfigView({
                       <div className="flex items-center -space-x-1 shrink-0">
                         <span
                           className="w-4 h-4 rounded-full border border-white"
-                          style={{ backgroundColor: preset.patch.sidebarBgColor }}
+                          style={{ background: preset.patch.sidebarBgColor }}
                         />
                         <span
                           className="w-4 h-4 rounded-full border border-white"
-                          style={{ backgroundColor: preset.patch.primaryColor }}
+                          style={{ background: preset.patch.primaryColor }}
                         />
                         <span
                           className="w-4 h-4 rounded-full border border-white"
-                          style={{ backgroundColor: preset.patch.accentColor }}
+                          style={{ background: preset.patch.accentColor }}
                         />
                       </div>
                       <span className="text-xs font-medium text-slate-800 truncate">
@@ -482,37 +817,49 @@ export function AppAppearanceConfigView({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              <ColorSwatchField
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <ColorPaletteField
                 label="Color de acento"
                 value={draft.accentColor}
-                swatches={ACCENT_SWATCHES}
-                onChange={(hex) => updateDraft({ accentColor: hex })}
+                palette={ACCENT_PALETTE}
+                allowGradient={false}
+                defaultGradientStops={['#1d4ed8', '#6d28d9']}
+                onChange={(val) => updateDraft({ accentColor: val })}
               />
-              <ColorSwatchField
+              <ColorPaletteField
                 label="Menú activo / principal"
                 value={draft.primaryColor}
-                swatches={PRIMARY_SWATCHES}
-                onChange={(hex) => updateDraft({ primaryColor: hex })}
+                palette={PRIMARY_PALETTE}
+                gradientPresets={DARK_OR_VIVID_GRADIENTS}
+                defaultGradientStops={['#1d4ed8', '#6d28d9']}
+                onChange={(val) => updateDraft({ primaryColor: val })}
               />
-              <ColorSwatchField
+              <ColorPaletteField
                 label="Fondo barra lateral"
                 value={draft.sidebarBgColor}
-                swatches={SIDEBAR_SWATCHES}
-                onChange={(hex) => updateDraft({ sidebarBgColor: hex })}
+                palette={SIDEBAR_PALETTE}
+                gradientPresets={DARK_OR_VIVID_GRADIENTS}
+                defaultGradientStops={['#0f172a', '#1e3a8a']}
+                onChange={(val) => updateDraft({ sidebarBgColor: val })}
               />
-              <ColorSwatchField
+              <ColorPaletteField
                 label="Fondo barra superior"
                 value={draft.headerBgColor}
-                swatches={HEADER_SWATCHES}
-                onChange={(hex) => updateDraft({ headerBgColor: hex })}
+                palette={HEADER_PALETTE}
+                gradientPresets={LIGHT_OR_SOFT_GRADIENTS}
+                defaultGradientStops={['#ffffff', '#e0e7ff']}
+                onChange={(val) => updateDraft({ headerBgColor: val })}
               />
-              <ColorSwatchField
-                label="Fondo área de trabajo"
-                value={draft.canvasBgColor}
-                swatches={CANVAS_SWATCHES}
-                onChange={(hex) => updateDraft({ canvasBgColor: hex })}
-              />
+              <div className="md:col-span-2">
+                <ColorPaletteField
+                  label="Fondo área de trabajo"
+                  value={draft.canvasBgColor}
+                  palette={CANVAS_PALETTE}
+                  gradientPresets={LIGHT_OR_SOFT_GRADIENTS}
+                  defaultGradientStops={['#eef2ff', '#fae8ff']}
+                  onChange={(val) => updateDraft({ canvasBgColor: val })}
+                />
+              </div>
             </div>
           </div>
 
@@ -617,7 +964,7 @@ export function AppAppearanceConfigView({
           <div
             className="border border-slate-300 rounded-xl overflow-hidden shadow-xs grid grid-cols-12 min-h-[340px]"
             style={{
-              backgroundColor: draft.canvasBgColor,
+              background: draft.canvasBgColor,
               fontFamily: previewFontCss,
             }}
           >
@@ -626,7 +973,7 @@ export function AppAppearanceConfigView({
               className={`col-span-4 p-3 border-r flex flex-col justify-between ${
                 previewSidebarDark ? 'border-slate-700/60' : 'border-slate-200'
               }`}
-              style={{ backgroundColor: draft.sidebarBgColor }}
+              style={{ background: draft.sidebarBgColor }}
             >
               <div className="space-y-3">
                 <div className="flex items-center gap-2 pb-2 border-b border-slate-400/20 min-w-0">
@@ -651,7 +998,7 @@ export function AppAppearanceConfigView({
                   <div
                     className="flex items-center gap-2 px-2.5 py-1.5 rounded-md font-medium"
                     style={{
-                      backgroundColor: draft.primaryColor,
+                      background: draft.primaryColor,
                       color: previewPrimaryDark ? '#ffffff' : '#0f172a',
                     }}
                   >
@@ -696,7 +1043,7 @@ export function AppAppearanceConfigView({
                 className={`px-3.5 py-2.5 border-b flex items-center justify-between gap-2 ${
                   previewHeaderDark ? 'border-slate-700/60' : 'border-slate-200'
                 }`}
-                style={{ backgroundColor: draft.headerBgColor }}
+                style={{ background: draft.headerBgColor }}
               >
                 <span
                   className="text-[11px] font-medium truncate"
@@ -710,7 +1057,7 @@ export function AppAppearanceConfigView({
                 <span
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium shrink-0"
                   style={{
-                    backgroundColor: draft.accentColor,
+                    backgroundColor: previewAccentHex,
                     color: previewAccentDark ? '#ffffff' : '#0f172a',
                   }}
                 >
@@ -732,7 +1079,7 @@ export function AppAppearanceConfigView({
                     <p className="text-[10px] text-slate-500">Catálogo</p>
                     <p
                       className="text-sm font-bold font-mono tabular-nums mt-1"
-                      style={{ color: draft.accentColor }}
+                      style={{ color: previewAccentHex }}
                     >
                       24 equipos
                     </p>
@@ -746,7 +1093,7 @@ export function AppAppearanceConfigView({
                     </span>
                     <span
                       className="text-[10px] font-medium"
-                      style={{ color: draft.accentColor }}
+                      style={{ color: previewAccentHex }}
                     >
                       Ver detalle
                     </span>
@@ -754,7 +1101,7 @@ export function AppAppearanceConfigView({
                   <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
                     <div
                       className="h-full w-2/3 rounded-full"
-                      style={{ backgroundColor: draft.accentColor }}
+                      style={{ backgroundColor: previewAccentHex }}
                     />
                   </div>
                 </div>

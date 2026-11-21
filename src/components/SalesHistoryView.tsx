@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  DEFAULT_WARRANTY_SHEET_SETTINGS,
   formatCurrency,
   getTodayDateKey,
   PAYMENT_METHODS,
@@ -27,12 +28,13 @@ import {
   type Sale,
   type UserRole,
   type Warranty,
+  type WarrantySheetSettings,
 } from '../types/store';
 import {
   authorizeAdminAction,
   deleteSaleRecord,
-  voidSaleByAdmin,
 } from '../lib/storeOperations';
+import { CancelSaleModal, CancelSalePanel } from './CancelSaleSection';
 import { ReceiptPreviewModal } from './ReceiptPreviewModal';
 import { WarrantySheetModal } from './WarrantySheetModal';
 
@@ -59,9 +61,13 @@ export function SalesHistoryView({
   repairs,
   warranties,
   receiptSettings,
+  warrantySheetSettings = DEFAULT_WARRANTY_SHEET_SETTINGS,
   uid,
   actorName,
   viewRole,
+  isDeveloper = false,
+  currentUsername = '',
+  requireAdminToCancelSale = true,
   onOpenPos,
   onOpenReceiptSettings,
 }: {
@@ -70,9 +76,13 @@ export function SalesHistoryView({
   repairs: RepairTicket[];
   warranties: Warranty[];
   receiptSettings: ReceiptSettings;
+  warrantySheetSettings?: WarrantySheetSettings;
   uid: string;
   actorName: string;
   viewRole: UserRole;
+  isDeveloper?: boolean;
+  currentUsername?: string;
+  requireAdminToCancelSale?: boolean;
   onOpenPos?: () => void;
   onOpenReceiptSettings?: () => void;
 }) {
@@ -97,9 +107,14 @@ export function SalesHistoryView({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const [sectionTab, setSectionTab] = useState<'list' | 'cancel'>('list');
+  const [cancelTarget, setCancelTarget] = useState<Sale | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const isAdmin = viewRole === 'admin';
+  const hasDirectDevPermission = isDeveloper || viewRole === 'developer';
+  const deleteNeedsAdminAuth =
+    !hasDirectDevPermission && (!isAdmin || requireAdminToCancelSale);
   const todayKey = getTodayDateKey();
 
   const sevenDaysAgoKey = useMemo(() => {
@@ -176,7 +191,9 @@ export function SalesHistoryView({
     setDeleteTarget(sale);
     setRestoreStockOnDelete(sale.status === 'Completada');
     setDeleteWarrantiesOnDelete(warranties.some((w) => w.saleId === sale.id));
-    setAdminUser('');
+    setAdminUser(
+      isAdmin && !hasDirectDevPermission ? currentUsername : ''
+    );
     setAdminPass('');
     setDeleteError(null);
   };
@@ -187,7 +204,7 @@ export function SalesHistoryView({
     setDeleteError(null);
     setDeleting(true);
     try {
-      if (!isAdmin) {
+      if (deleteNeedsAdminAuth) {
         if (!adminUser.trim() || !adminPass) {
           setDeleteError(
             'Ingresa usuario y contraseña de administrador para eliminar la venta.'
@@ -195,7 +212,11 @@ export function SalesHistoryView({
           setDeleting(false);
           return;
         }
-        await authorizeAdminAction(adminUser.trim(), adminPass);
+        await authorizeAdminAction(
+          adminUser.trim(),
+          adminPass,
+          'eliminar ventas realizadas'
+        );
       }
 
       const result = await deleteSaleRecord({
@@ -237,11 +258,6 @@ export function SalesHistoryView({
     }
   };
 
-  const handleVoidSale = async (sale: Sale) => {
-    await voidSaleByAdmin(sale.id);
-    setFeedback(`Venta ${sale.saleNumber} marcada como Anulada.`);
-  };
-
   const linkedWarrantiesForTarget = useMemo(() => {
     if (!deleteTarget) return [];
     return warranties.filter((w) => w.saleId === deleteTarget.id);
@@ -271,6 +287,31 @@ export function SalesHistoryView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setSectionTab('list')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                sectionTab === 'list'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Ventas ({sales.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSectionTab('cancel')}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                sectionTab === 'cancel'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-amber-800 hover:bg-amber-50'
+              }`}
+            >
+              <Ban className="w-3.5 h-3.5" />
+              Cancelar Venta Realizada
+            </button>
+          </div>
           {onOpenPos && (
             <button
               type="button"
@@ -301,6 +342,21 @@ export function SalesHistoryView({
         </div>
       )}
 
+      {sectionTab === 'cancel' ? (
+        <CancelSalePanel
+          sales={sales}
+          repairs={repairs}
+          warranties={warranties}
+          uid={uid}
+          actorName={actorName}
+          viewRole={viewRole}
+          isDeveloper={isDeveloper}
+          currentUsername={currentUsername}
+          requireAdminToCancelSale={requireAdminToCancelSale}
+          onOpenReceipt={(sale) => setPreviewSale(sale)}
+        />
+      ) : (
+        <>
       {/* KPI Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 no-print">
         <div className="bg-white border border-slate-200 rounded-xl p-4">
@@ -575,15 +631,15 @@ export function SalesHistoryView({
                               Garantía
                             </button>
                           )}
-                          {isAdmin && s.status === 'Completada' && (
+                          {s.status === 'Completada' && (
                             <button
                               type="button"
-                              onClick={() => void handleVoidSale(s)}
+                              onClick={() => setCancelTarget(s)}
                               className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded-md transition-colors cursor-pointer"
-                              title="Marcar venta como anulada"
+                              title="Cancelar venta realizada y devolver inventario"
                             >
                               <Ban className="w-3.5 h-3.5" />
-                              Anular
+                              Cancelar
                             </button>
                           )}
                           <button
@@ -605,6 +661,8 @@ export function SalesHistoryView({
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Sale Detail Modal */}
       {detailSale && (
@@ -665,6 +723,11 @@ export function SalesHistoryView({
                   >
                     {detailSale.status}
                   </strong>
+                  {detailSale.status === 'Anulada' && detailSale.cancelReason && (
+                    <span className="block text-[11px] text-slate-600 mt-0.5">
+                      Motivo: {detailSale.cancelReason}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -727,6 +790,20 @@ export function SalesHistoryView({
                     <Printer className="w-3.5 h-3.5" />
                     Ver Comprobante
                   </button>
+                  {detailSale.status === 'Completada' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = detailSale;
+                        setDetailSale(null);
+                        setCancelTarget(target);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded-lg cursor-pointer"
+                    >
+                      <Ban className="w-3.5 h-3.5" />
+                      Cancelar Venta
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -756,12 +833,58 @@ export function SalesHistoryView({
                       </span>
                     </p>
                   )}
+                  {typeof detailSale.taxAmount === 'number' &&
+                    (detailSale.taxAmount > 0 || (detailSale.taxRate ?? 0) > 0) && (
+                      <>
+                        {detailSale.taxIncluded !== false && (
+                          <p className="text-slate-500">
+                            Base sin {detailSale.taxLabel || 'IVA'}:{' '}
+                            <span className="font-mono font-semibold text-slate-800">
+                              {formatCurrency(
+                                Math.max(0, detailSale.total - detailSale.taxAmount)
+                              )}
+                            </span>
+                          </p>
+                        )}
+                        <p className="text-slate-600">
+                          {detailSale.taxLabel || 'IVA'} ({detailSale.taxRate ?? 0}%
+                          {detailSale.taxIncluded !== false ? ' inc.' : ''}):{' '}
+                          <span className="font-mono font-semibold text-slate-900">
+                            {detailSale.taxIncluded === false ? '+' : ''}
+                            {formatCurrency(detailSale.taxAmount)}
+                          </span>
+                        </p>
+                      </>
+                    )}
                   <p className="text-sm font-bold text-slate-900">
                     Total:{' '}
                     <span className="font-mono">
                       {formatCurrency(detailSale.total)}
                     </span>
                   </p>
+                  {typeof detailSale.amountTendered === 'number' && (
+                    <>
+                      <p className="text-slate-600">
+                        Efectivo recibido:{' '}
+                        <span className="font-mono font-semibold text-slate-900">
+                          {formatCurrency(detailSale.amountTendered)}
+                        </span>
+                      </p>
+                      <p className="text-emerald-700 font-semibold">
+                        Cambio:{' '}
+                        <span className="font-mono">
+                          {formatCurrency(
+                            typeof detailSale.changeAmount === 'number'
+                              ? detailSale.changeAmount
+                              : Math.max(
+                                  0,
+                                  detailSale.amountTendered - detailSale.total
+                                )
+                          )}
+                        </span>
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -860,7 +983,7 @@ export function SalesHistoryView({
                 )}
               </div>
 
-              {!isAdmin && (
+              {deleteNeedsAdminAuth && (
                 <div className="space-y-3 p-3.5 rounded-xl bg-amber-50 border border-amber-200">
                   <p className="text-[11px] font-semibold text-amber-900">
                     Autorización de Administrador requerida
@@ -915,6 +1038,21 @@ export function SalesHistoryView({
         </div>
       )}
 
+      <CancelSaleModal
+        sale={cancelTarget}
+        allSales={sales}
+        allRepairs={repairs}
+        warranties={warranties}
+        uid={uid}
+        actorName={actorName}
+        viewRole={viewRole}
+        isDeveloper={isDeveloper}
+        currentUsername={currentUsername}
+        requireAdminToCancelSale={requireAdminToCancelSale}
+        onClose={() => setCancelTarget(null)}
+        onCancelled={(msg) => setFeedback(msg)}
+      />
+
       <ReceiptPreviewModal
         sale={previewSale}
         settings={receiptSettings}
@@ -927,6 +1065,7 @@ export function SalesHistoryView({
         sale={warrantySheetModal?.sale || null}
         products={products}
         settings={receiptSettings}
+        warrantySettings={warrantySheetSettings}
         onClose={() => setWarrantySheetModal(null)}
         onOpenReceipt={
           warrantySheetModal?.sale

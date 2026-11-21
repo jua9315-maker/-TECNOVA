@@ -30,6 +30,7 @@ import {
   type UserRole,
   type VisualCustomizationSettings,
   type Warranty,
+  type WarrantySheetSettings,
   type WarrantyStatus,
 } from '../types/store';
 import {
@@ -48,6 +49,7 @@ import {
   savePosSettings,
   saveReceiptSettings,
   saveVisualCustomizationSettings,
+  saveWarrantySheetSettings,
   updateLocalAccountAllowedTabs,
   updateLocalAccountPassword,
   updateLocalAccountStatusOrRole,
@@ -233,7 +235,8 @@ export async function reopenDailyCashRegister(params: {
 }): Promise<{ authorizedByName: string }> {
   const adminAccount = await verifyAdministratorAuthorization(
     params.adminUsername,
-    params.adminPassword
+    params.adminPassword,
+    'reabrir la caja'
   );
 
   const existing = await getLocalDoc<DailyReport>('dailyReports', params.dateKey);
@@ -324,6 +327,10 @@ export async function processPosSale(params: {
   customerPhone: string;
   paymentMethod: PaymentMethod;
   discount: number;
+  taxRate?: number;
+  taxIncluded?: boolean;
+  taxLabel?: string;
+  amountTendered?: number;
   cart: { product: Product; quantity: number; imei: string }[];
   existingSales: Sale[];
   existingRepairs: RepairTicket[];
@@ -342,6 +349,10 @@ export async function processPosSale(params: {
     customerPhone,
     paymentMethod,
     discount,
+    taxRate = 0,
+    taxIncluded = true,
+    taxLabel = 'IVA',
+    amountTendered,
     cart,
     existingSales,
     existingRepairs,
@@ -368,11 +379,49 @@ export async function processPosSale(params: {
 
   const subtotal = items.reduce((acc, i) => acc + i.unitPrice * i.quantity, 0);
   const safeDiscount = Math.min(subtotal, Math.max(0, Number(discount) || 0));
-  const total = Math.max(0, Number((subtotal - safeDiscount).toFixed(2)));
+  const netAfterDiscount = Math.max(0, Number((subtotal - safeDiscount).toFixed(2)));
+
+  const normalizedTaxRate =
+    typeof taxRate === 'number' && Number.isFinite(taxRate) && taxRate > 0
+      ? Number(Math.min(100, taxRate).toFixed(2))
+      : 0;
+  const isTaxIncluded = taxIncluded !== false;
+  let taxAmount = 0;
+  let total = netAfterDiscount;
+
+  if (normalizedTaxRate > 0) {
+    if (isTaxIncluded) {
+      const baseAmount = Number(
+        (netAfterDiscount / (1 + normalizedTaxRate / 100)).toFixed(2)
+      );
+      taxAmount = Number(Math.max(0, netAfterDiscount - baseAmount).toFixed(2));
+      total = netAfterDiscount;
+    } else {
+      taxAmount = Number(
+        ((netAfterDiscount * normalizedTaxRate) / 100).toFixed(2)
+      );
+      total = Number((netAfterDiscount + taxAmount).toFixed(2));
+    }
+  }
+
   const totalCost = Number(
     items.reduce((acc, i) => acc + i.costPrice * i.quantity, 0).toFixed(2)
   );
   const profit = Number((total - totalCost).toFixed(2));
+
+  let resolvedTendered: number | undefined;
+  let resolvedChange: number | undefined;
+  if (
+    typeof amountTendered === 'number' &&
+    Number.isFinite(amountTendered) &&
+    amountTendered >= 0
+  ) {
+    resolvedTendered = Number(amountTendered.toFixed(2));
+    resolvedChange = Number(Math.max(0, resolvedTendered - total).toFixed(2));
+  } else if (paymentMethod === 'Efectivo') {
+    resolvedTendered = total;
+    resolvedChange = 0;
+  }
 
   const newSaleData = {
     saleNumber,
@@ -383,7 +432,26 @@ export async function processPosSale(params: {
     items,
     subtotal: Number(subtotal.toFixed(2)),
     discount: Number(safeDiscount.toFixed(2)),
+    ...(normalizedTaxRate > 0
+      ? {
+          taxRate: normalizedTaxRate,
+          taxAmount,
+          taxIncluded: isTaxIncluded,
+          taxLabel: clampString(taxLabel || 'IVA', 20),
+        }
+      : {
+          taxRate: 0,
+          taxAmount: 0,
+          taxIncluded: isTaxIncluded,
+          taxLabel: clampString(taxLabel || 'IVA', 20),
+        }),
     total,
+    ...(typeof resolvedTendered === 'number'
+      ? {
+          amountTendered: resolvedTendered,
+          changeAmount: resolvedChange ?? 0,
+        }
+      : {}),
     totalCost,
     profit,
     sellerUid: uid,
@@ -493,20 +561,132 @@ export async function voidSaleByAdmin(saleId: string): Promise<void> {
     {
       ...existing,
       status: 'Anulada',
+      cancelledAtMs: Date.now(),
     },
     false
   );
 }
 
+export async function cancelSaleRecord(params: {
+  sale: Sale;
+  allSales: Sale[];
+  allRepairs: RepairTicket[];
+  warranties: Warranty[];
+  uid: string;
+  actorName: string;
+  reason?: string;
+  restoreStock?: boolean;
+  cancelLinkedWarranties?: boolean;
+}): Promise<{ restoredUnits: number; cancelledWarranties: number }> {
+  const {
+    sale,
+    allSales,
+    allRepairs,
+    warranties,
+    uid,
+    actorName,
+    reason = '',
+    restoreStock = true,
+    cancelLinkedWarranties = true,
+  } = params;
+
+  const existing = (await getLocalDoc<Sale>('sales', sale.id)) || sale;
+  if (existing.status === 'Anulada') {
+    return { restoredUnits: 0, cancelledWarranties: 0 };
+  }
+
+  let restoredUnits = 0;
+  let cancelledWarranties = 0;
+
+  if (restoreStock) {
+    for (const item of existing.items) {
+      const product = await getLocalDoc<Product>('products', item.productId);
+      if (product) {
+        const qty = Math.max(0, Math.floor(item.quantity || 0));
+        await saveLocalDoc(
+          'products',
+          product.id,
+          {
+            ...product,
+            stock: Math.max(0, product.stock + qty),
+            updatedBy: uid,
+          },
+          false
+        );
+        restoredUnits += qty;
+      }
+    }
+  }
+
+  if (cancelLinkedWarranties) {
+    const linked = warranties.filter((w) => w.saleId === existing.id);
+    for (const w of linked) {
+      const freshW = (await getLocalDoc<Warranty>('warranties', w.id)) || w;
+      if (freshW.status !== 'Anulada') {
+        const noteSuffix = reason.trim()
+          ? `Anulada por cancelación de venta ${existing.saleNumber}: ${reason.trim()}`
+          : `Anulada por cancelación de venta ${existing.saleNumber}.`;
+        await saveLocalDoc(
+          'warranties',
+          freshW.id,
+          {
+            ...freshW,
+            status: 'Anulada' as WarrantyStatus,
+            notes: clampString(
+              freshW.notes ? `${freshW.notes} | ${noteSuffix}` : noteSuffix,
+              500
+            ),
+          },
+          false
+        );
+        cancelledWarranties += 1;
+      }
+    }
+  }
+
+  const cancelPatch = {
+    ...existing,
+    status: 'Anulada' as const,
+    cancelReason: clampString(reason.trim(), 240),
+    cancelledByName: clampString(actorName || 'Administrador', 100),
+    cancelledAtMs: Date.now(),
+  };
+
+  await saveLocalDoc('sales', existing.id, cancelPatch, false);
+
+  const cancelledSale: Sale = cancelPatch;
+  const updatedSales = allSales.map((s) =>
+    s.id === existing.id ? cancelledSale : s
+  );
+  const existingReport = await getLocalDoc<DailyReport>(
+    'dailyReports',
+    existing.dateKey
+  );
+  if (existingReport) {
+    await syncDailyReportForDate(
+      existing.dateKey,
+      updatedSales,
+      allRepairs,
+      uid,
+      actorName,
+      existingReport.status === 'Cerrado'
+    );
+  }
+
+  return { restoredUnits, cancelledWarranties };
+}
+
 export async function authorizeAdminAction(
   adminUsername: string,
-  adminPassword: string
-): Promise<{ displayName: string }> {
+  adminPassword: string,
+  actionLabel = 'autorizar esta operación'
+): Promise<{ displayName: string; role: UserRole }> {
   const adminAccount = await verifyAdministratorAuthorization(
     adminUsername,
-    adminPassword
+    adminPassword,
+    actionLabel
   );
-  return { displayName: adminAccount.displayName };
+  return { displayName: adminAccount.displayName, role: adminAccount.role };
 }
 
 export async function deleteSaleRecord(params: {
@@ -1121,6 +1301,12 @@ export async function saveStorePosSettings(
   settings: PosSettings
 ): Promise<PosSettings> {
   return savePosSettings(settings);
+}
+
+export async function saveStoreWarrantySheetSettings(
+  settings: WarrantySheetSettings
+): Promise<WarrantySheetSettings> {
+  return saveWarrantySheetSettings(settings);
 }
 
 export async function updateDeveloperOwnAccount(

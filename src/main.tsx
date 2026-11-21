@@ -3,6 +3,11 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
 
-registerSW({ immediate: true });
+const isElectronRuntime =
+  typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent);
+
+if (!isElectronRuntime) {
+  registerSW({ immediate: true });
+}
 
 createRoot(document.getElementById('root')!).render(<App />);

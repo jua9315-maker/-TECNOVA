@@ -19,7 +19,7 @@
   }
 
   body {
-    background-color: var(--app-bg);
+    background: var(--app-bg);
     color: #0f172a;
     overflow-x: hidden;
   }

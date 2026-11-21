@@ -376,6 +376,7 @@ export function AdminDashboard({
   onSyncDailyReport,
   onReopenCashRegister,
   requireAdminToReopenCash = true,
+  isDeveloper = false,
 }: {
   profile: UserProfile | null;
   products: Product[];
@@ -394,6 +395,7 @@ export function AdminDashboard({
     reason: string
   ) => Promise<void>;
   requireAdminToReopenCash?: boolean;
+  isDeveloper?: boolean;
 }) {
   const [seeding, setSeeding] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -1269,7 +1271,7 @@ export function AdminDashboard({
               disabled={syncing}
               onClick={() => {
                 if (isCashClosed) {
-                  if (requireAdminToReopenCash) {
+                  if (requireAdminToReopenCash && !isDeveloper) {
                     setReopenModalOpen(true);
                   } else {
                     void handleSync(false);
@@ -1287,7 +1289,7 @@ export function AdminDashboard({
               {isCashClosed ? (
                 <>
                   <Unlock className="w-3.5 h-3.5" />
-                  Abrir Caja (Admin)
+                  {isDeveloper ? 'Abrir Caja (Desarrollador)' : 'Abrir Caja (Admin)'}
                 </>
               ) : (
                 <>

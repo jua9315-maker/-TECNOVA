@@ -147,10 +147,58 @@ export function ReceiptDocument({
             <span className="tabular-nums">-{formatCurrency(sale.discount)}</span>
           </div>
         )}
+        {settings.showTax !== false &&
+          typeof sale.taxAmount === 'number' &&
+          (sale.taxAmount > 0 || (sale.taxRate ?? 0) > 0) && (() => {
+            const label = sale.taxLabel || settings.taxLabel || 'IVA';
+            const rate = sale.taxRate ?? 0;
+            const isIncluded = sale.taxIncluded !== false;
+            const netBase = Math.max(0, sale.total - sale.taxAmount);
+            return (
+              <>
+                {isIncluded && (
+                  <div className="flex justify-between text-[11px] text-slate-500">
+                    <span>Base sin {label}</span>
+                    <span className="tabular-nums">{formatCurrency(netBase)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-[11px] text-slate-700">
+                  <span>
+                    {label} ({rate}%{isIncluded ? ' inc.' : ''})
+                  </span>
+                  <span className="tabular-nums">
+                    {isIncluded ? '' : '+'}
+                    {formatCurrency(sale.taxAmount)}
+                  </span>
+                </div>
+              </>
+            );
+          })()}
         <div className="flex justify-between text-sm font-bold text-slate-900 pt-1">
           <span>TOTAL</span>
           <span className="tabular-nums">{formatCurrency(sale.total)}</span>
         </div>
+        {settings.showCashChange !== false &&
+          typeof sale.amountTendered === 'number' && (
+            <div className="pt-1.5 mt-1.5 border-t border-dotted border-slate-300 space-y-0.5 text-[11px]">
+              <div className="flex justify-between text-slate-700">
+                <span>Efectivo recibido</span>
+                <span className="tabular-nums font-medium">
+                  {formatCurrency(sale.amountTendered)}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-900 font-semibold">
+                <span>Cambio</span>
+                <span className="tabular-nums">
+                  {formatCurrency(
+                    typeof sale.changeAmount === 'number'
+                      ? sale.changeAmount
+                      : Math.max(0, sale.amountTendered - sale.total)
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
       </div>
 
       {/* Footer + QR */}

@@ -615,6 +615,25 @@ export function DeveloperModeConfigView({
             Tamaño de tarjetas, columnas, campos visibles y reglas de caja.
           </p>
         </button>
+
+        <button
+          type="button"
+          onClick={() => onChangeSection('warranty')}
+          className="p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-500 text-left transition-colors group cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <ShieldCheck className="w-4 h-4 text-emerald-700" />
+            <span className="text-[10px] font-medium text-blue-700 group-hover:underline">
+              Configurar →
+            </span>
+          </div>
+          <p className="text-xs font-semibold text-slate-900 mt-2">
+            Hoja de Garantía
+          </p>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Edita títulos, cláusulas, columnas de equipo, sello digital y firmas.
+          </p>
+        </button>
       </div>
 
       {/* Main Grid: System Rules + Visual Layout Manager */}
@@ -757,6 +776,14 @@ export function DeveloperModeConfigView({
               checked={sysDraft.requireAdminToReopenCash}
               onChange={(checked) =>
                 setSysDraft((p) => ({ ...p, requireAdminToReopenCash: checked }))
+              }
+            />
+            <ToggleRow
+              label="Exigir autorización de Administrador para cancelar ventas"
+              description="Solicita credenciales de Administrador al cancelar una venta realizada (el Desarrollador siempre tiene permiso total directo)."
+              checked={sysDraft.requireAdminToCancelSale ?? true}
+              onChange={(checked) =>
+                setSysDraft((p) => ({ ...p, requireAdminToCancelSale: checked }))
               }
             />
             <ToggleRow

@@ -23,6 +23,7 @@ import {
   APP_CURRENCY_OPTIONS,
   DEFAULT_DEVELOPER_SYSTEM_SETTINGS,
   DEFAULT_POS_SETTINGS,
+  DEFAULT_WARRANTY_SHEET_SETTINGS,
   formatCurrency,
   getCurrencyOption,
   PAYMENT_METHODS,
@@ -38,10 +39,12 @@ import {
   type Sale,
   type UserRole,
   type Warranty,
+  type WarrantySheetSettings,
 } from '../types/store';
-import { processPosSale, voidSaleByAdmin } from '../lib/storeOperations';
+import { processPosSale } from '../lib/storeOperations';
 import { subscribeCustomProductCategories } from '../lib/localDb';
 import { QrCodeImg } from './BarcodeQrToolkit';
+import { CancelSaleModal, CancelSalePanel } from './CancelSaleSection';
 import { ReceiptPreviewModal } from './ReceiptPreviewModal';
 import { WarrantySheetModal } from './WarrantySheetModal';
 
@@ -127,6 +130,8 @@ export function PosSalesView({
   uid,
   sellerName,
   viewRole,
+  isDeveloper = false,
+  currentUsername = '',
   receiptSettings,
   currencyCode,
   onChangeCurrency,
@@ -136,6 +141,7 @@ export function PosSalesView({
   onConsumeQueuedProduct,
   developerSettings = DEFAULT_DEVELOPER_SYSTEM_SETTINGS,
   posSettings = DEFAULT_POS_SETTINGS,
+  warrantySheetSettings = DEFAULT_WARRANTY_SHEET_SETTINGS,
 }: {
   products: Product[];
   sales: Sale[];
@@ -144,6 +150,8 @@ export function PosSalesView({
   uid: string;
   sellerName: string;
   viewRole: UserRole;
+  isDeveloper?: boolean;
+  currentUsername?: string;
   receiptSettings: ReceiptSettings;
   currencyCode: AppCurrencyCode;
   onChangeCurrency?: (code: AppCurrencyCode) => void;
@@ -153,9 +161,12 @@ export function PosSalesView({
   onConsumeQueuedProduct: () => void;
   developerSettings?: DeveloperSystemSettings;
   posSettings?: PosSettings;
+  warrantySheetSettings?: WarrantySheetSettings;
 }) {
   const activeCurrency = getCurrencyOption(currencyCode);
-  const [subTab, setSubTab] = useState<'pos' | 'history'>('pos');
+  const [subTab, setSubTab] = useState<'pos' | 'history' | 'cancel'>('pos');
+  const [cancelModalSale, setCancelModalSale] = useState<Sale | null>(null);
+  const [historyFeedback, setHistoryFeedback] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('Todos');
   const [cart, setCart] = useState<PosCartItem[]>([]);
@@ -167,6 +178,16 @@ export function PosSalesView({
   const [showDiscountPanel, setShowDiscountPanel] = useState(false);
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
   const [discountInput, setDiscountInput] = useState<string>('');
+  const [cashTenderedInput, setCashTenderedInput] = useState<string>('');
+  const [taxEnabled, setTaxEnabled] = useState<boolean>(
+    posSettings.enableTax !== false
+  );
+  const [taxRateInput, setTaxRateInput] = useState<string>(
+    String(posSettings.taxRatePercent ?? 16)
+  );
+  const [taxMode, setTaxMode] = useState<'included' | 'added'>(
+    posSettings.taxMode || 'included'
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [completedReceipt, setCompletedReceipt] = useState<{
@@ -186,10 +207,22 @@ export function PosSalesView({
   }, []);
 
   useEffect(() => {
-    if (cart.length === 0 && posSettings.defaultPaymentMethod) {
-      setPaymentMethod(posSettings.defaultPaymentMethod);
+    if (cart.length === 0) {
+      setCashTenderedInput('');
+      if (posSettings.defaultPaymentMethod) {
+        setPaymentMethod(posSettings.defaultPaymentMethod);
+      }
+      setTaxEnabled(posSettings.enableTax !== false);
+      setTaxRateInput(String(posSettings.taxRatePercent ?? 16));
+      setTaxMode(posSettings.taxMode || 'included');
     }
-  }, [posSettings.defaultPaymentMethod, cart.length]);
+  }, [
+    posSettings.defaultPaymentMethod,
+    posSettings.enableTax,
+    posSettings.taxRatePercent,
+    posSettings.taxMode,
+    cart.length,
+  ]);
 
   const allowNegativeStock = Boolean(developerSettings.allowNegativeStockSale);
   const maxDiscountPct = Math.min(
@@ -302,7 +335,71 @@ export function PosSalesView({
   const safeDiscount = posSettings.allowDiscountPanel
     ? Number(Math.min(maxDiscountAmount, Math.max(0, computedDiscount)).toFixed(2))
     : 0;
-  const total = Math.max(0, Number((subtotal - safeDiscount).toFixed(2)));
+  const netAfterDiscount = Math.max(
+    0,
+    Number((subtotal - safeDiscount).toFixed(2))
+  );
+  const activeTaxLabel = (posSettings.taxLabel || 'IVA').trim() || 'IVA';
+  const parsedTaxRate = taxEnabled
+    ? Math.max(0, Math.min(100, Number(taxRateInput) || 0))
+    : 0;
+  const isTaxIncluded = taxMode === 'included';
+  const computedTaxAmount =
+    parsedTaxRate > 0
+      ? isTaxIncluded
+        ? Number(
+            Math.max(
+              0,
+              netAfterDiscount -
+                Number((netAfterDiscount / (1 + parsedTaxRate / 100)).toFixed(2))
+            ).toFixed(2)
+          )
+        : Number(((netAfterDiscount * parsedTaxRate) / 100).toFixed(2))
+      : 0;
+  const taxBaseAmount =
+    parsedTaxRate > 0 && isTaxIncluded
+      ? Number(Math.max(0, netAfterDiscount - computedTaxAmount).toFixed(2))
+      : netAfterDiscount;
+  const total =
+    parsedTaxRate > 0 && !isTaxIncluded
+      ? Number((netAfterDiscount + computedTaxAmount).toFixed(2))
+      : netAfterDiscount;
+
+  const isCashOrMixto = paymentMethod === 'Efectivo' || paymentMethod === 'Mixto';
+  const hasCashInput = cashTenderedInput.trim() !== '';
+  const parsedCashTendered = hasCashInput ? Number(cashTenderedInput) : NaN;
+  const effectiveCashTendered =
+    isCashOrMixto &&
+    hasCashInput &&
+    Number.isFinite(parsedCashTendered) &&
+    parsedCashTendered >= 0
+      ? Number(parsedCashTendered.toFixed(2))
+      : paymentMethod === 'Efectivo'
+        ? total
+        : undefined;
+  const cashShortfall =
+    paymentMethod === 'Efectivo' &&
+    hasCashInput &&
+    (!Number.isFinite(parsedCashTendered) || parsedCashTendered < total);
+  const computedChange =
+    typeof effectiveCashTendered === 'number'
+      ? Number(Math.max(0, effectiveCashTendered - total).toFixed(2))
+      : 0;
+
+  const quickCashSuggestions = useMemo(() => {
+    if (total <= 0) return [];
+    const steps = [10, 20, 50, 100, 200, 500, 1000];
+    const candidates = new Set<number>();
+    for (const step of steps) {
+      const rounded = Math.ceil(total / step) * step;
+      if (rounded > total) {
+        candidates.add(rounded);
+      }
+    }
+    return Array.from(candidates)
+      .sort((a, b) => a - b)
+      .slice(0, 4);
+  }, [total]);
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -310,6 +407,28 @@ export function PosSalesView({
 
     if (posSettings.requireCustomerInfo && !customerName.trim()) {
       setError('Captura el nombre del cliente antes de cobrar.');
+      return;
+    }
+
+    if (
+      paymentMethod === 'Efectivo' &&
+      hasCashInput &&
+      (!Number.isFinite(parsedCashTendered) || parsedCashTendered < total)
+    ) {
+      setError(
+        `El efectivo recibido (${formatCurrency(
+          Number.isFinite(parsedCashTendered) ? parsedCashTendered : 0
+        )}) es menor al total a cobrar (${formatCurrency(total)}).`
+      );
+      return;
+    }
+
+    if (
+      paymentMethod === 'Mixto' &&
+      hasCashInput &&
+      (!Number.isFinite(parsedCashTendered) || parsedCashTendered < 0)
+    ) {
+      setError('Ingresa un monto de efectivo válido.');
       return;
     }
 
@@ -340,6 +459,10 @@ export function PosSalesView({
         customerPhone: customerPhone.trim() || 'Sin teléfono',
         paymentMethod,
         discount: safeDiscount,
+        taxRate: parsedTaxRate,
+        taxIncluded: isTaxIncluded,
+        taxLabel: activeTaxLabel,
+        amountTendered: effectiveCashTendered,
         cart,
         existingSales: sales,
         existingRepairs: repairs,
@@ -372,6 +495,7 @@ export function PosSalesView({
       setCustomerName('');
       setCustomerPhone('');
       setDiscountInput('');
+      setCashTenderedInput('');
       setShowDiscountPanel(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar la venta.');
@@ -459,7 +583,7 @@ export function PosSalesView({
               <button
                 type="button"
                 onClick={() => setSubTab('pos')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
                   subTab === 'pos'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -470,13 +594,25 @@ export function PosSalesView({
               <button
                 type="button"
                 onClick={() => setSubTab('history')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
                   subTab === 'history'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 Historial ({sales.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubTab('cancel')}
+                className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                  subTab === 'cancel'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-amber-800 hover:bg-amber-50'
+                }`}
+              >
+                <Ban className="w-3.5 h-3.5" />
+                Cancelar Venta
               </button>
             </div>
             <button
@@ -486,6 +622,43 @@ export function PosSalesView({
             >
               <QrCode className="w-4 h-4" />
               Escanear Producto
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!posSettings.showHeaderBanner && subTab !== 'pos' && (
+        <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setSubTab('pos')}
+              className="px-2.5 py-1 text-xs font-medium rounded-md text-slate-600 hover:text-slate-900 cursor-pointer"
+            >
+              Caja POS
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab('history')}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md cursor-pointer ${
+                subTab === 'history'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Historial ({sales.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab('cancel')}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md cursor-pointer ${
+                subTab === 'cancel'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-amber-800 hover:bg-amber-50'
+              }`}
+            >
+              <Ban className="w-3.5 h-3.5" />
+              Cancelar Venta
             </button>
           </div>
         </div>
@@ -523,6 +696,14 @@ export function PosSalesView({
                         className="px-2.5 py-1 text-[11px] font-medium rounded-md text-slate-600 hover:text-slate-900"
                       >
                         Historial ({sales.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSubTab('cancel')}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md text-amber-800 hover:bg-amber-50"
+                      >
+                        <Ban className="w-3 h-3" />
+                        Cancelar Venta
                       </button>
                     </div>
                     <button
@@ -831,6 +1012,34 @@ export function PosSalesView({
                           Subtotal {formatCurrency(completedReceipt.sale.subtotal)} · Descuento -{formatCurrency(completedReceipt.sale.discount)}
                         </p>
                       )}
+                      {typeof completedReceipt.sale.taxAmount === 'number' &&
+                        completedReceipt.sale.taxAmount > 0 && (
+                          <p className="text-xs text-emerald-800 mt-0.5 font-mono">
+                            {completedReceipt.sale.taxLabel || 'IVA'} ({completedReceipt.sale.taxRate ?? 0}%
+                            {completedReceipt.sale.taxIncluded !== false ? ' inc.' : ''}):{' '}
+                            {formatCurrency(completedReceipt.sale.taxAmount)}
+                          </p>
+                        )}
+                      {typeof completedReceipt.sale.amountTendered === 'number' && (
+                        <p className="text-xs text-emerald-900 mt-0.5 font-mono">
+                          Efectivo recibido:{' '}
+                          <span className="font-semibold">
+                            {formatCurrency(completedReceipt.sale.amountTendered)}
+                          </span>{' '}
+                          · Cambio:{' '}
+                          <span className="font-bold">
+                            {formatCurrency(
+                              typeof completedReceipt.sale.changeAmount === 'number'
+                                ? completedReceipt.sale.changeAmount
+                                : Math.max(
+                                    0,
+                                    completedReceipt.sale.amountTendered -
+                                      completedReceipt.sale.total
+                                  )
+                            )}
+                          </span>
+                        </p>
+                      )}
                       {completedReceipt.warrantiesCreated > 0 && (
                         <p className="text-xs text-emerald-800 mt-1">
                           Se emitieron {completedReceipt.warrantiesCreated} certificados de garantía automáticamente.
@@ -1136,6 +1345,153 @@ export function PosSalesView({
                       )}
                     </div>
                   )}
+                  {/* Cash Received & Change Calculator */}
+                  {isCashOrMixto && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <label
+                          htmlFor="pos-cash-tendered"
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-800"
+                        >
+                          <Coins className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>
+                            {paymentMethod === 'Mixto'
+                              ? `Efectivo entregado (${activeCurrency.symbol})`
+                              : `Efectivo que dio el cliente (${activeCurrency.symbol})`}
+                          </span>
+                        </label>
+                        {hasCashInput && (
+                          <button
+                            type="button"
+                            onClick={() => setCashTenderedInput('')}
+                            className="text-[11px] font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
+                          >
+                            Limpiar
+                          </button>
+                        )}
+                      </div>
+
+                      <input
+                        id="pos-cash-tendered"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={cashTenderedInput}
+                        onChange={(e) => setCashTenderedInput(e.target.value)}
+                        placeholder={`Exacto: ${total.toFixed(2)}`}
+                        className="w-full px-3 py-2 text-sm font-mono font-semibold bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700"
+                      />
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setCashTenderedInput(total.toFixed(2))}
+                          className={`px-2 py-1 text-[11px] font-medium rounded-md border transition-colors cursor-pointer ${
+                            hasCashInput && Number(cashTenderedInput) === total
+                              ? 'bg-slate-900 text-white border-slate-900'
+                              : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          Exacto
+                        </button>
+                        {quickCashSuggestions.map((amt) => (
+                          <button
+                            key={amt}
+                            type="button"
+                            onClick={() => setCashTenderedInput(String(amt))}
+                            className={`px-2 py-1 text-[11px] font-mono rounded-md border transition-colors cursor-pointer ${
+                              hasCashInput && Number(cashTenderedInput) === amt
+                                ? 'bg-slate-900 text-white border-slate-900'
+                                : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            {formatCurrency(amt)}
+                          </button>
+                        ))}
+                      </div>
+
+                      {cashShortfall ? (
+                        <div className="flex items-center justify-between text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+                          <span>Falta por cubrir</span>
+                          <span className="font-mono font-semibold tabular-nums">
+                            {formatCurrency(
+                              total -
+                                (Number.isFinite(parsedCashTendered)
+                                  ? parsedCashTendered
+                                  : 0)
+                            )}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
+                          <span className="text-slate-600 font-medium">
+                            Cambio a devolver
+                          </span>
+                          <span className="font-mono font-bold tabular-nums text-emerald-700 text-sm">
+                            {formatCurrency(computedChange)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* IVA / Tax Control */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={taxEnabled}
+                          onChange={(e) => setTaxEnabled(e.target.checked)}
+                          className="rounded border-slate-300"
+                        />
+                        <span>Aplicar {activeTaxLabel}</span>
+                      </label>
+
+                      {taxEnabled && (
+                        <div className="flex items-center gap-1.5">
+                          <div className="inline-flex rounded-md bg-slate-200/70 p-0.5 text-[10px]">
+                            <button
+                              type="button"
+                              onClick={() => setTaxMode('included')}
+                              className={`px-2 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                                taxMode === 'included'
+                                  ? 'bg-white text-slate-900 shadow-2xs'
+                                  : 'text-slate-600'
+                              }`}
+                            >
+                              Incluido
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTaxMode('added')}
+                              className={`px-2 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                                taxMode === 'added'
+                                  ? 'bg-white text-slate-900 shadow-2xs'
+                                  : 'text-slate-600'
+                              }`}
+                            >
+                              + Sumar
+                            </button>
+                          </div>
+                          <div className="relative w-16">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step="0.5"
+                              value={taxRateInput}
+                              onChange={(e) => setTaxRateInput(e.target.value)}
+                              className="w-full px-2 py-1 pr-5 text-[11px] font-mono bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-700"
+                              aria-label={`Porcentaje de ${activeTaxLabel}`}
+                            />
+                            <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">
+                              %
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="pt-3 border-t border-slate-200 space-y-1.5 text-sm">
@@ -1156,10 +1512,47 @@ export function PosSalesView({
                       </span>
                     </div>
                   )}
+                  {parsedTaxRate > 0 && (
+                    <>
+                      {isTaxIncluded && (
+                        <div className="flex justify-between text-slate-500 text-xs">
+                          <span>Base sin {activeTaxLabel}</span>
+                          <span className="font-mono tabular-nums">
+                            {formatCurrency(taxBaseAmount)}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-slate-700 text-xs">
+                        <span>
+                          {activeTaxLabel} ({parsedTaxRate}%{isTaxIncluded ? ' inc.' : ''})
+                        </span>
+                        <span className="font-mono tabular-nums">
+                          {isTaxIncluded ? '' : '+'}
+                          {formatCurrency(computedTaxAmount)}
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between text-base font-bold text-slate-900 pt-1">
                     <span>Total a Cobrar</span>
                     <span className="font-mono tabular-nums">{formatCurrency(total)}</span>
                   </div>
+                  {typeof effectiveCashTendered === 'number' && !cashShortfall && (
+                    <div className="pt-1.5 mt-1 border-t border-dashed border-slate-200 space-y-0.5 text-xs">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Efectivo recibido</span>
+                        <span className="font-mono tabular-nums">
+                          {formatCurrency(effectiveCashTendered)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between font-semibold text-emerald-700">
+                        <span>Cambio</span>
+                        <span className="font-mono tabular-nums">
+                          {formatCurrency(computedChange)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -1176,114 +1569,165 @@ export function PosSalesView({
             )}
           </div>
         </div>
+      ) : subTab === 'cancel' ? (
+        <CancelSalePanel
+          sales={sales}
+          repairs={repairs}
+          warranties={warranties}
+          uid={uid}
+          actorName={sellerName}
+          viewRole={viewRole}
+          isDeveloper={isDeveloper}
+          currentUsername={currentUsername}
+          requireAdminToCancelSale={
+            developerSettings.requireAdminToCancelSale ?? true
+          }
+          onOpenReceipt={(sale) => setPreviewSale(sale)}
+        />
       ) : (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          {sales.length === 0 ? (
-            <div className="py-12 text-center text-sm text-slate-500">
-              Aún no hay ventas registradas.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                    <th className="py-3 px-4">Folio</th>
-                    <th className="py-3 px-4">Fecha</th>
-                    <th className="py-3 px-4">Cliente</th>
-                    <th className="py-3 px-4">Artículos</th>
-                    <th className="py-3 px-4">Pago</th>
-                    <th className="py-3 px-4 text-right">Total</th>
-                    {viewRole === 'admin' && (
-                      <th className="py-3 px-4 text-right">Utilidad</th>
-                    )}
-                    <th className="py-3 px-4">Estado</th>
-                    <th className="py-3 px-4 text-right">Comprobante</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-sm">
-                  {sales.map((s) => (
-                    <tr key={s.id} className="hover:bg-slate-50/70">
-                      <td className="py-3 px-4 font-mono text-xs font-medium text-slate-900 whitespace-nowrap">
-                        {s.saleNumber}
-                      </td>
-                      <td className="py-3 px-4 font-mono text-xs text-slate-500 whitespace-nowrap">
-                        {s.dateKey}
-                      </td>
-                      <td className="py-3 px-4">
-                        <p className="text-xs font-medium text-slate-900">{s.customerName}</p>
-                        <p className="text-[11px] text-slate-400">{s.customerPhone}</p>
-                      </td>
-                      <td className="py-3 px-4 text-xs text-slate-600 max-w-[260px] truncate">
-                        {s.items.map((i) => `${i.quantity}x ${i.productName}`).join(', ')}
-                      </td>
-                      <td className="py-3 px-4 text-xs text-slate-600 whitespace-nowrap">
-                        {s.paymentMethod}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono tabular-nums font-semibold text-slate-900 whitespace-nowrap">
-                        {formatCurrency(s.total)}
-                        {s.discount > 0 && (
-                          <span className="block text-[11px] font-normal text-emerald-700">
-                            Desc. -{formatCurrency(s.discount)}
-                          </span>
-                        )}
-                      </td>
-                      {viewRole === 'admin' && (
-                        <td className="py-3 px-4 text-right font-mono tabular-nums text-xs text-emerald-700 whitespace-nowrap">
-                          {formatCurrency(s.profit)}
-                        </td>
-                      )}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <span
-                          className={`text-xs font-medium ${
-                            s.status === 'Completada' ? 'text-emerald-700' : 'text-red-600'
-                          }`}
-                        >
-                          {s.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap space-x-3">
-                        <button
-                          type="button"
-                          onClick={() => setPreviewSale(s)}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline cursor-pointer"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          Comprobante
-                        </button>
-                        {warranties.some((w) => w.saleId === s.id) && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setWarrantySheetModal({
-                                warranties: warranties.filter((w) => w.saleId === s.id),
-                                sale: s,
-                              })
-                            }
-                            className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline cursor-pointer"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            Garantía
-                          </button>
-                        )}
-                        {viewRole === 'admin' && s.status === 'Completada' && (
-                          <button
-                            type="button"
-                            onClick={() => void voidSaleByAdmin(s.id)}
-                            className="inline-flex items-center gap-1 text-xs text-red-600 hover:underline cursor-pointer"
-                          >
-                            <Ban className="w-3.5 h-3.5" />
-                            Anular
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <div className="space-y-4">
+          {historyFeedback && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3 text-xs text-emerald-900">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="font-medium">{historyFeedback}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistoryFeedback(null)}
+                className="text-emerald-700 hover:text-emerald-950 p-1 cursor-pointer"
+                aria-label="Cerrar aviso"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
+
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+            {sales.length === 0 ? (
+              <div className="py-12 text-center text-sm text-slate-500">
+                Aún no hay ventas registradas.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">Folio</th>
+                      <th className="py-3 px-4">Fecha</th>
+                      <th className="py-3 px-4">Cliente</th>
+                      <th className="py-3 px-4">Artículos</th>
+                      <th className="py-3 px-4">Pago</th>
+                      <th className="py-3 px-4 text-right">Total</th>
+                      {viewRole === 'admin' && (
+                        <th className="py-3 px-4 text-right">Utilidad</th>
+                      )}
+                      <th className="py-3 px-4">Estado</th>
+                      <th className="py-3 px-4 text-right">Comprobante</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-sm">
+                    {sales.map((s) => (
+                      <tr key={s.id} className="hover:bg-slate-50/70">
+                        <td className="py-3 px-4 font-mono text-xs font-medium text-slate-900 whitespace-nowrap">
+                          {s.saleNumber}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-xs text-slate-500 whitespace-nowrap">
+                          {s.dateKey}
+                        </td>
+                        <td className="py-3 px-4">
+                          <p className="text-xs font-medium text-slate-900">{s.customerName}</p>
+                          <p className="text-[11px] text-slate-400">{s.customerPhone}</p>
+                        </td>
+                        <td className="py-3 px-4 text-xs text-slate-600 max-w-[260px] truncate">
+                          {s.items.map((i) => `${i.quantity}x ${i.productName}`).join(', ')}
+                        </td>
+                        <td className="py-3 px-4 text-xs text-slate-600 whitespace-nowrap">
+                          {s.paymentMethod}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+                          {formatCurrency(s.total)}
+                          {s.discount > 0 && (
+                            <span className="block text-[11px] font-normal text-emerald-700">
+                              Desc. -{formatCurrency(s.discount)}
+                            </span>
+                          )}
+                        </td>
+                        {viewRole === 'admin' && (
+                          <td className="py-3 px-4 text-right font-mono tabular-nums text-xs text-emerald-700 whitespace-nowrap">
+                            {formatCurrency(s.profit)}
+                          </td>
+                        )}
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span
+                            className={`text-xs font-medium ${
+                              s.status === 'Completada' ? 'text-emerald-700' : 'text-red-600'
+                            }`}
+                          >
+                            {s.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap space-x-3">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewSale(s)}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            Comprobante
+                          </button>
+                          {warranties.some((w) => w.saleId === s.id) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setWarrantySheetModal({
+                                  warranties: warranties.filter((w) => w.saleId === s.id),
+                                  sale: s,
+                                })
+                              }
+                              className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline cursor-pointer"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              Garantía
+                            </button>
+                          )}
+                          {s.status === 'Completada' && (
+                            <button
+                              type="button"
+                              onClick={() => setCancelModalSale(s)}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline cursor-pointer"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              Cancelar
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
+
+      <CancelSaleModal
+        sale={cancelModalSale}
+        allSales={sales}
+        allRepairs={repairs}
+        warranties={warranties}
+        uid={uid}
+        actorName={sellerName}
+        viewRole={viewRole}
+        isDeveloper={isDeveloper}
+        currentUsername={currentUsername}
+        requireAdminToCancelSale={
+          developerSettings.requireAdminToCancelSale ?? true
+        }
+        onClose={() => setCancelModalSale(null)}
+        onCancelled={(msg) => setHistoryFeedback(msg)}
+      />
 
       <ReceiptPreviewModal
         sale={previewSale}
@@ -1297,6 +1741,7 @@ export function PosSalesView({
         sale={warrantySheetModal?.sale || null}
         products={products}
         settings={receiptSettings}
+        warrantySettings={warrantySheetSettings}
         onClose={() => setWarrantySheetModal(null)}
         onOpenReceipt={
           warrantySheetModal?.sale

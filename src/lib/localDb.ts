@@ -9,9 +9,11 @@ import {
   DEFAULT_POS_SETTINGS,
   DEFAULT_RECEIPT_SETTINGS,
   DEFAULT_VISUAL_CUSTOMIZATION_SETTINGS,
+  DEFAULT_WARRANTY_SHEET_SETTINGS,
   normalizeUsername,
   PRODUCT_CONDITIONS,
   resolveUserAllowedTabs,
+  resolveWarrantyTermItems,
   STORE_ID,
   type AppAppearanceSettings,
   type CatalogImagePreset,
@@ -31,6 +33,8 @@ import {
   type UserRole,
   type VisualCustomizationSettings,
   type Warranty,
+  type WarrantySheetSettings,
+  type WarrantyTermItem,
 } from '../types/store';
 
 export type LocalStoreName =
@@ -98,6 +102,9 @@ const developerSystemListeners = new Set<
 >();
 const customCategoriesListeners = new Set<(categories: string[]) => void>();
 const posSettingsListeners = new Set<(settings: PosSettings) => void>();
+const warrantySheetSettingsListeners = new Set<
+  (settings: WarrantySheetSettings) => void
+>();
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 let initPromise: Promise<void> | null = null;
@@ -118,6 +125,7 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         | 'developerSystem'
         | 'customCategories'
         | 'posSettings'
+        | 'warrantySheetSettings'
         | 'all'
         | undefined;
       if (store === 'all') {
@@ -132,6 +140,7 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         void notifyDeveloperSystemSettings(false);
         void notifyCustomProductCategories(false);
         void notifyPosSettings(false);
+        void notifyWarrantySheetSettings(false);
       } else if (store === 'receiptSettings') {
         void notifyReceiptSettings(false);
       } else if (store === 'loginPresentation') {
@@ -148,6 +157,8 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         void notifyCustomProductCategories(false);
       } else if (store === 'posSettings') {
         void notifyPosSettings(false);
+      } else if (store === 'warrantySheetSettings') {
+        void notifyWarrantySheetSettings(false);
       } else if (store && listeners[store]) {
         void notifyStore(store, false);
       }
@@ -614,7 +625,8 @@ export async function authenticateLocalUser(
 
 export async function verifyAdministratorAuthorization(
   username: string,
-  password: string
+  password: string,
+  actionLabel = 'autorizar esta operación'
 ): Promise<StoredAccountRecord> {
   await ensureLocalDbReady();
   const clean = normalizeUsername(username);
@@ -635,7 +647,7 @@ export async function verifyAdministratorAuthorization(
   }
   if (match.role !== 'admin' && match.role !== 'developer') {
     throw new Error(
-      'Autorización denegada: solo un Administrador puede abrir la caja.'
+      `Autorización denegada: solo un Administrador o Desarrollador puede ${actionLabel}.`
     );
   }
   return match;
@@ -1409,6 +1421,101 @@ export function subscribePosSettings(
   };
 }
 
+export async function getWarrantySheetSettings(): Promise<WarrantySheetSettings> {
+  await ensureLocalDbReady();
+  const row = await getOneRaw<{ key: string; value: WarrantySheetSettings }>(
+    'meta',
+    'warranty_sheet_settings'
+  );
+  if (!row?.value) {
+    const baseTerms = resolveWarrantyTermItems(DEFAULT_WARRANTY_SHEET_SETTINGS);
+    return {
+      ...DEFAULT_WARRANTY_SHEET_SETTINGS,
+      warrantyTerms: baseTerms,
+      termsList: baseTerms.filter((t) => t.enabled).map((t) => t.text),
+    };
+  }
+  const resolvedTerms = resolveWarrantyTermItems(row.value);
+  return {
+    ...DEFAULT_WARRANTY_SHEET_SETTINGS,
+    ...row.value,
+    warrantyTerms: resolvedTerms,
+    termsList: resolvedTerms.filter((t) => t.enabled).map((t) => t.text),
+  };
+}
+
+async function notifyWarrantySheetSettings(
+  broadcastChange = true
+): Promise<void> {
+  const settings = await getWarrantySheetSettings();
+  for (const cb of warrantySheetSettingsListeners) {
+    cb(settings);
+  }
+  if (broadcastChange && broadcast) {
+    try {
+      broadcast.postMessage({ store: 'warrantySheetSettings' });
+    } catch {
+      // Ignore broadcast channel errors
+    }
+  }
+}
+
+export async function saveWarrantySheetSettings(
+  settings: WarrantySheetSettings
+): Promise<WarrantySheetSettings> {
+  await ensureLocalDbReady();
+  const rawTerms: WarrantyTermItem[] = resolveWarrantyTermItems(settings)
+    .map((t, idx) => ({
+      id: t.id || `term_${idx + 1}`,
+      text: t.text.trim(),
+      enabled: t.enabled !== false,
+    }))
+    .filter((t) => t.text.length > 0)
+    .slice(0, 30);
+  const cleanTerms = rawTerms.filter((t) => t.enabled).map((t) => t.text);
+  const normalized: WarrantySheetSettings = {
+    ...DEFAULT_WARRANTY_SHEET_SETTINGS,
+    ...settings,
+    badgeLabel:
+      settings.badgeLabel.trim().slice(0, 50) ||
+      DEFAULT_WARRANTY_SHEET_SETTINGS.badgeLabel,
+    documentTitle:
+      settings.documentTitle.trim().slice(0, 70) ||
+      DEFAULT_WARRANTY_SHEET_SETTINGS.documentTitle,
+    customerSectionTitle:
+      settings.customerSectionTitle.trim().slice(0, 70) ||
+      DEFAULT_WARRANTY_SHEET_SETTINGS.customerSectionTitle,
+    coverageSectionTitle:
+      settings.coverageSectionTitle.trim().slice(0, 70) ||
+      DEFAULT_WARRANTY_SHEET_SETTINGS.coverageSectionTitle,
+    deviceSectionTitle:
+      settings.deviceSectionTitle.trim().slice(0, 80) ||
+      DEFAULT_WARRANTY_SHEET_SETTINGS.deviceSectionTitle,
+    termsSectionTitle:
+      settings.termsSectionTitle.trim().slice(0, 80) ||
+      DEFAULT_WARRANTY_SHEET_SETTINGS.termsSectionTitle,
+    warrantyTerms: rawTerms,
+    termsList: cleanTerms,
+    updatedAtMs: Date.now(),
+  };
+  await putOneRaw('meta', {
+    key: 'warranty_sheet_settings',
+    value: normalized,
+  });
+  await notifyWarrantySheetSettings(true);
+  return normalized;
+}
+
+export function subscribeWarrantySheetSettings(
+  callback: (settings: WarrantySheetSettings) => void
+): () => void {
+  warrantySheetSettingsListeners.add(callback);
+  void getWarrantySheetSettings().then((settings) => callback(settings));
+  return () => {
+    warrantySheetSettingsListeners.delete(callback);
+  };
+}
+
 export interface DesktopBackupSnapshot {
   app: 'NexoCell Studio Escritorio';
   version: 1;
@@ -1420,6 +1527,7 @@ export interface DesktopBackupSnapshot {
   installedAppSettings?: InstalledAppSettings;
   developerSystemSettings?: DeveloperSystemSettings;
   posSettings?: PosSettings;
+  warrantySheetSettings?: WarrantySheetSettings;
   customProductCategories?: string[];
   accounts: StoredAccountRecord[];
   products: Product[];
@@ -1445,6 +1553,7 @@ export async function exportDesktopDatabaseJson(): Promise<string> {
     installedAppSettings,
     developerSystemSettings,
     posSettings,
+    warrantySheetSettings,
     customProductCategories,
   ] = await Promise.all([
     getAllRaw<StoredAccountRecord>('accounts'),
@@ -1460,6 +1569,7 @@ export async function exportDesktopDatabaseJson(): Promise<string> {
     getInstalledAppSettings(),
     getDeveloperSystemSettings(),
     getPosSettings(),
+    getWarrantySheetSettings(),
     getCustomProductCategories(),
   ]);
 
@@ -1474,6 +1584,7 @@ export async function exportDesktopDatabaseJson(): Promise<string> {
     installedAppSettings,
     developerSystemSettings,
     posSettings,
+    warrantySheetSettings,
     customProductCategories,
     accounts,
     products: products.map((p) => stripNonCloneable(p as unknown as Record<string, unknown>) as unknown as Product),
@@ -1588,6 +1699,9 @@ export async function importDesktopDatabaseJson(jsonText: string): Promise<{
   }
   if (parsed.posSettings) {
     await savePosSettings(parsed.posSettings);
+  }
+  if (parsed.warrantySheetSettings) {
+    await saveWarrantySheetSettings(parsed.warrantySheetSettings);
   }
   if (Array.isArray(parsed.customProductCategories)) {
     await saveCustomProductCategories(parsed.customProductCategories);

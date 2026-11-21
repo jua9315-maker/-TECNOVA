@@ -51,7 +51,13 @@ const SAMPLE_PREVIEW_SALE: Sale = {
   ],
   subtotal: 1188,
   discount: 38,
+  taxRate: 16,
+  taxAmount: 158.62,
+  taxIncluded: true,
+  taxLabel: 'IVA',
   total: 1150,
+  amountTendered: 1200,
+  changeAmount: 50,
   totalCost: 908,
   profit: 242,
   sellerUid: 'local_admin_01',
@@ -461,6 +467,36 @@ export function ReceiptConfigView({
                 />
                 <span className="font-medium text-slate-800">
                   Mostrar meses de garantía
+                </span>
+              </label>
+
+              <label className="flex items-center gap-2.5 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={draft.showCashChange !== false}
+                  onChange={(e) => {
+                    setDraft({ ...draft, showCashChange: e.target.checked });
+                    setSavedNotice(false);
+                  }}
+                  className="rounded border-slate-300"
+                />
+                <span className="font-medium text-slate-800">
+                  Mostrar efectivo recibido y cambio
+                </span>
+              </label>
+
+              <label className="flex items-center gap-2.5 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={draft.showTax !== false}
+                  onChange={(e) => {
+                    setDraft({ ...draft, showTax: e.target.checked });
+                    setSavedNotice(false);
+                  }}
+                  className="rounded border-slate-300"
+                />
+                <span className="font-medium text-slate-800">
+                  Mostrar desglose de IVA
                 </span>
               </label>
             </div>

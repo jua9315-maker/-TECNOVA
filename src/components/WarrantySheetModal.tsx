@@ -2,254 +2,392 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileCheck2, Printer, Receipt, ShieldCheck, X } from 'lucide-react';
 import {
+  DEFAULT_WARRANTY_SHEET_SETTINGS,
   formatCurrency,
+  resolveWarrantyTermItems,
   type Product,
   type ReceiptSettings,
   type Sale,
   type Warranty,
+  type WarrantySheetSettings,
 } from '../types/store';
 import { QrCodeImg } from './BarcodeQrToolkit';
+
+function interpolateClause(
+  template: string,
+  warranty: Warranty,
+  businessName: string
+): string {
+  const mesesText = `${warranty.warrantyMonths} ${
+    warranty.warrantyMonths === 1 ? 'mes' : 'meses'
+  }`;
+  return template
+    .replace(/\{meses\}/gi, mesesText)
+    .replace(/\{fechaCompra\}/gi, warranty.purchaseDate)
+    .replace(/\{fechaVencimiento\}/gi, warranty.expiresDate)
+    .replace(/\{negocio\}/gi, businessName)
+    .replace(/\{codigo\}/gi, warranty.warrantyCode);
+}
 
 export function WarrantySheetDocument({
   warranty,
   sale,
   product,
   settings,
+  warrantySettings = DEFAULT_WARRANTY_SHEET_SETTINGS,
   isLast = true,
 }: {
   warranty: Warranty;
   sale?: Sale | null;
   product?: Product | null;
   settings: ReceiptSettings;
+  warrantySettings?: WarrantySheetSettings;
   isLast?: boolean;
 }) {
+  const ws = {
+    ...DEFAULT_WARRANTY_SHEET_SETTINGS,
+    ...warrantySettings,
+  };
+  const activeTerms = resolveWarrantyTermItems(ws).filter(
+    (t) => t.enabled && t.text.trim().length > 0
+  );
+
+  const effectiveBusinessName =
+    ws.businessName.trim() || settings.businessName || 'NexoCell Studio';
+  const effectiveTagline = ws.tagline.trim() || settings.tagline;
+  const effectiveAddress = ws.address.trim() || settings.address;
+  const effectivePhone = ws.phone.trim() || settings.phone;
+  const effectiveTaxId = ws.taxId.trim() || settings.taxId;
+  const effectiveLogo = ws.customLogoDataUrl || settings.logoDataUrl;
+  const accentColor = ws.accentColor || '#1d4ed8';
+  const headerBorderColor = ws.headerBorderColor || '#0f172a';
+
+  const densityPadding =
+    ws.paperDensity === 'compact'
+      ? 'p-5 sm:p-6'
+      : ws.paperDensity === 'spacious'
+        ? 'p-8 sm:p-11'
+        : 'p-7 sm:p-9';
+
+  const sectionGapY =
+    ws.paperDensity === 'compact'
+      ? 'py-3.5'
+      : ws.paperDensity === 'spacious'
+        ? 'py-6'
+        : 'py-5';
+
   const matchedSaleItem = sale?.items.find(
     (item) =>
       item.productId === warranty.productId ||
       (warranty.imei && warranty.imei !== 'N/A' && item.imei === warranty.imei)
   );
 
+  const showTwoCards = ws.showCustomerSection && ws.showCoverageSection;
+
   return (
     <article
-      className={`w-full max-w-[740px] mx-auto bg-white text-slate-900 border border-slate-200 rounded-xl p-7 sm:p-9 shadow-xs print:border-0 print:shadow-none print:rounded-none print:p-6 ${
+      className={`w-full max-w-[740px] mx-auto bg-white text-slate-900 border border-slate-200 rounded-xl ${densityPadding} shadow-xs print:border-0 print:shadow-none print:rounded-none print:p-6 ${
         !isLast ? 'print:break-after-page mb-6 print:mb-0' : ''
       }`}
     >
       {/* Encabezado Oficial de la Tienda */}
-      <header className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b-2 border-slate-900">
+      <header
+        className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b-2"
+        style={{ borderBottomColor: headerBorderColor }}
+      >
         <div className="flex items-start gap-3.5">
-          {settings.showLogo && settings.logoDataUrl && (
+          {ws.showLogo && effectiveLogo && (
             <img
-              src={settings.logoDataUrl}
-              alt={`Logo de ${settings.businessName}`}
+              src={effectiveLogo}
+              alt={`Logo de ${effectiveBusinessName}`}
               className="h-14 w-auto max-w-[140px] object-contain shrink-0"
             />
           )}
           <div className="space-y-0.5">
             <h1 className="text-lg font-bold tracking-tight text-slate-900">
-              {settings.businessName}
+              {effectiveBusinessName}
             </h1>
-            {settings.tagline && (
-              <p className="text-xs text-slate-600">{settings.tagline}</p>
+            {effectiveTagline && (
+              <p className="text-xs text-slate-600">{effectiveTagline}</p>
             )}
-            <div className="text-[11px] text-slate-500 space-x-2">
-              {settings.address && <span>{settings.address}</span>}
-              {settings.phone && <span>· Tel: {settings.phone}</span>}
-              {settings.taxId && <span>· ID: {settings.taxId}</span>}
-            </div>
+            {(effectiveAddress || effectivePhone || effectiveTaxId) && (
+              <div className="text-[11px] text-slate-500 space-x-2">
+                {effectiveAddress && <span>{effectiveAddress}</span>}
+                {effectivePhone && <span>· Tel: {effectivePhone}</span>}
+                {effectiveTaxId && <span>· ID: {effectiveTaxId}</span>}
+              </div>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-3.5 sm:text-right shrink-0">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-700">
-              Póliza Oficial
-            </p>
+            {ws.badgeLabel && (
+              <p
+                className="text-[11px] font-semibold uppercase tracking-wider"
+                style={{ color: accentColor }}
+              >
+                {ws.badgeLabel}
+              </p>
+            )}
             <p className="text-base font-bold text-slate-900 tracking-tight">
-              HOJA DE GARANTÍA
+              {ws.documentTitle}
             </p>
             <p className="text-xs font-mono font-semibold text-slate-700 mt-0.5">
               {warranty.warrantyCode}
             </p>
           </div>
-          <QrCodeImg value={warranty.warrantyCode} size={74} />
+          {ws.showQrCode && <QrCodeImg value={warranty.warrantyCode} size={74} />}
         </div>
       </header>
 
       {/* Datos del Cliente y Vigencia */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-5 border-b border-slate-200">
-        <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-            Datos del Cliente y Venta
-          </h2>
-          <dl className="space-y-1.5 text-xs">
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">Cliente:</dt>
-              <dd className="font-semibold text-slate-900 text-right">
-                {warranty.customerName}
-              </dd>
+      {(ws.showCustomerSection || ws.showCoverageSection) && (
+        <section
+          className={`grid grid-cols-1 ${
+            showTwoCards ? 'sm:grid-cols-2' : ''
+          } gap-4 ${sectionGapY} border-b border-slate-200`}
+        >
+          {ws.showCustomerSection && (
+            <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                {ws.customerSectionTitle}
+              </h2>
+              <dl className="space-y-1.5 text-xs">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-500">{ws.customerNameLabel}</dt>
+                  <dd className="font-semibold text-slate-900 text-right">
+                    {warranty.customerName}
+                  </dd>
+                </div>
+                {ws.showCustomerPhone && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">{ws.customerPhoneLabel}</dt>
+                    <dd className="font-mono text-slate-800 text-right">
+                      {warranty.customerPhone}
+                    </dd>
+                  </div>
+                )}
+                {ws.showSaleFolio && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">{ws.saleFolioLabel}</dt>
+                    <dd className="font-mono font-medium text-slate-900 text-right">
+                      {sale?.saleNumber || warranty.saleId}
+                    </dd>
+                  </div>
+                )}
+                {ws.showSellerName && sale?.sellerName && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">{ws.sellerNameLabel}</dt>
+                    <dd className="text-slate-800 text-right">
+                      {sale.sellerName}
+                    </dd>
+                  </div>
+                )}
+              </dl>
             </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">Teléfono:</dt>
-              <dd className="font-mono text-slate-800 text-right">
-                {warranty.customerPhone}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">Folio de Venta:</dt>
-              <dd className="font-mono font-medium text-slate-900 text-right">
-                {sale?.saleNumber || warranty.saleId}
-              </dd>
-            </div>
-            {sale?.sellerName && (
-              <div className="flex justify-between gap-2">
-                <dt className="text-slate-500">Atendido por:</dt>
-                <dd className="text-slate-800 text-right">{sale.sellerName}</dd>
-              </div>
-            )}
-          </dl>
-        </div>
+          )}
 
-        <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-            Cobertura y Vigencia
-          </h2>
-          <dl className="space-y-1.5 text-xs">
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">Fecha de Compra:</dt>
-              <dd className="font-mono tabular-nums font-medium text-slate-900">
-                {warranty.purchaseDate}
-              </dd>
+          {ws.showCoverageSection && (
+            <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                {ws.coverageSectionTitle}
+              </h2>
+              <dl className="space-y-1.5 text-xs">
+                {ws.showPurchaseDate && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">{ws.purchaseDateLabel}</dt>
+                    <dd className="font-mono tabular-nums font-medium text-slate-900">
+                      {warranty.purchaseDate}
+                    </dd>
+                  </div>
+                )}
+                {ws.showExpiresDate && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">{ws.expiresDateLabel}</dt>
+                    <dd className="font-mono tabular-nums font-bold text-slate-900">
+                      {warranty.expiresDate}
+                    </dd>
+                  </div>
+                )}
+                {ws.showDuration && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">{ws.durationLabel}</dt>
+                    <dd
+                      className="font-mono tabular-nums font-semibold"
+                      style={{ color: accentColor }}
+                    >
+                      {warranty.warrantyMonths}{' '}
+                      {warranty.warrantyMonths === 1 ? 'mes' : 'meses'}
+                    </dd>
+                  </div>
+                )}
+                {ws.showStatus && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">{ws.statusLabel}</dt>
+                    <dd className="font-semibold text-emerald-700">
+                      {warranty.status}
+                    </dd>
+                  </div>
+                )}
+              </dl>
             </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">Vencimiento:</dt>
-              <dd className="font-mono tabular-nums font-bold text-slate-900">
-                {warranty.expiresDate}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">Duración:</dt>
-              <dd className="font-mono tabular-nums font-semibold text-blue-700">
-                {warranty.warrantyMonths}{' '}
-                {warranty.warrantyMonths === 1 ? 'mes' : 'meses'}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-slate-500">Estado Actual:</dt>
-              <dd className="font-semibold text-emerald-700">{warranty.status}</dd>
-            </div>
-          </dl>
-        </div>
-      </section>
+          )}
+        </section>
+      )}
 
       {/* Especificaciones del Teléfono / Dispositivo */}
-      <section className="py-5 border-b border-slate-200 space-y-3">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-          Equipo Cubierto por Esta Garantía
-        </h2>
+      {ws.showDeviceSection && (
+        <section className={`${sectionGapY} border-b border-slate-200 space-y-3`}>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+            {ws.deviceSectionTitle}
+          </h2>
 
-        <div className="border border-slate-200 rounded-lg overflow-hidden">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-100 text-slate-600 border-b border-slate-200">
-                <th className="py-2.5 px-3.5 font-semibold">Equipo / Modelo</th>
-                <th className="py-2.5 px-3.5 font-semibold">IMEI / Número de Serie</th>
-                <th className="py-2.5 px-3.5 font-semibold">Especificaciones</th>
-                {matchedSaleItem && (
-                  <th className="py-2.5 px-3.5 font-semibold text-right">Valor</th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="py-3 px-3.5 font-semibold text-slate-900">
-                  {warranty.productName}
-                  {product?.brand && (
-                    <span className="block text-[11px] font-normal text-slate-500 mt-0.5">
-                      {product.brand} {product.model} · {product.condition}
-                    </span>
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100 text-slate-600 border-b border-slate-200">
+                  <th className="py-2.5 px-3.5 font-semibold">
+                    {ws.deviceColumnHeader}
+                  </th>
+                  {ws.showImeiColumn && (
+                    <th className="py-2.5 px-3.5 font-semibold">
+                      {ws.imeiColumnHeader}
+                    </th>
                   )}
-                </td>
-                <td className="py-3 px-3.5 font-mono font-bold text-slate-900">
-                  {warranty.imei || 'N/A'}
-                </td>
-                <td className="py-3 px-3.5 text-slate-600">
-                  {product
-                    ? [
-                        product.storage && product.storage !== '-'
-                          ? `Capacidad: ${product.storage}`
-                          : null,
-                        product.color && product.color !== '-'
-                          ? `Color: ${product.color}`
-                          : null,
-                        `SKU: ${product.sku}`,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')
-                    : matchedSaleItem
-                      ? `SKU: ${matchedSaleItem.sku}`
-                      : 'Verificado en mostrador'}
-                </td>
-                {matchedSaleItem && (
-                  <td className="py-3 px-3.5 text-right font-mono tabular-nums font-semibold text-slate-900">
-                    {formatCurrency(matchedSaleItem.unitPrice)}
+                  {ws.showSpecsColumn && (
+                    <th className="py-2.5 px-3.5 font-semibold">
+                      {ws.specsColumnHeader}
+                    </th>
+                  )}
+                  {ws.showPriceColumn && matchedSaleItem && (
+                    <th className="py-2.5 px-3.5 font-semibold text-right">
+                      {ws.priceColumnHeader}
+                    </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="py-3 px-3.5 font-semibold text-slate-900">
+                    {warranty.productName}
+                    {ws.showBrandAndCondition && product?.brand && (
+                      <span className="block text-[11px] font-normal text-slate-500 mt-0.5">
+                        {product.brand} {product.model} · {product.condition}
+                      </span>
+                    )}
                   </td>
-                )}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+                  {ws.showImeiColumn && (
+                    <td className="py-3 px-3.5 font-mono font-bold text-slate-900">
+                      {warranty.imei || 'N/A'}
+                    </td>
+                  )}
+                  {ws.showSpecsColumn && (
+                    <td className="py-3 px-3.5 text-slate-600">
+                      {product
+                        ? [
+                            product.storage && product.storage !== '-'
+                              ? `Capacidad: ${product.storage}`
+                              : null,
+                            product.color && product.color !== '-'
+                              ? `Color: ${product.color}`
+                              : null,
+                            `SKU: ${product.sku}`,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')
+                        : matchedSaleItem
+                          ? `SKU: ${matchedSaleItem.sku}`
+                          : 'Verificado en mostrador'}
+                    </td>
+                  )}
+                  {ws.showPriceColumn && matchedSaleItem && (
+                    <td className="py-3 px-3.5 text-right font-mono tabular-nums font-semibold text-slate-900">
+                      {formatCurrency(matchedSaleItem.unitPrice)}
+                    </td>
+                  )}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Condiciones de la Garantía */}
-      <section className="py-5 border-b border-slate-200 space-y-2.5">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-          Términos y Condiciones de Cobertura
-        </h2>
-        <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-600 leading-relaxed">
-          <li>
-            Esta garantía cubre exclusivamente fallas o defectos de fabricación en hardware y funcionamiento interno durante{' '}
-            <strong className="text-slate-900">{warranty.warrantyMonths} meses</strong> a partir de la fecha de compra ({warranty.purchaseDate} al {warranty.expiresDate}).
-          </li>
-          <li>
-            Para hacer válida la garantía es obligatorio presentar esta{' '}
-            <strong className="text-slate-900">Hoja de Garantía</strong> junto con el comprobante de compra y verificar que el número de{' '}
-            <strong className="text-slate-900">IMEI / Serie</strong> coincida con el dispositivo.
-          </li>
-          <li>
-            La garantía queda anulada automáticamente si el equipo presenta rastros de humedad o líquidos, golpes, pantalla estrellada, chasis doblado, sobrecarga eléctrica, manipulación por servicio técnico externo o sellos de seguridad removidos.
-          </li>
-          <li>
-            Los accesorios incluidos (cables, adaptadores, audífonos o fundas) y las baterías están sujetos a desgaste normal y revisión previa en banco técnico.
-          </li>
-        </ol>
+      {((ws.showTermsSection && activeTerms.length > 0) ||
+        (ws.showNotesBlock && (warranty.notes || ws.extraInfoNote))) && (
+        <section className={`${sectionGapY} border-b border-slate-200 space-y-2.5`}>
+          {ws.showTermsSection && activeTerms.length > 0 && (
+            <>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                {ws.termsSectionTitle}
+              </h2>
+              <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-600 leading-relaxed">
+                {activeTerms.map((term) => (
+                  <li key={term.id}>
+                    {interpolateClause(term.text, warranty, effectiveBusinessName)}
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
 
-        {warranty.notes && (
-          <div className="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
-            <strong className="text-slate-800">Observaciones:</strong> {warranty.notes}
-          </div>
-        )}
-      </section>
+          {ws.showNotesBlock && warranty.notes && (
+            <div className="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
+              <strong className="text-slate-800">{ws.notesLabel}</strong>{' '}
+              {warranty.notes}
+            </div>
+          )}
+
+          {ws.extraInfoNote.trim() && (
+            <div className="mt-2 p-3 rounded-lg bg-blue-50/60 border border-blue-200/80 text-[11px] text-slate-700 whitespace-pre-line">
+              {ws.extraInfoNote}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Firmas */}
-      <footer className="pt-8 grid grid-cols-2 gap-8 text-center text-[11px] text-slate-600">
-        <div className="space-y-1.5">
-          <div className="border-t border-slate-400 pt-2 font-medium text-slate-800">
-            Firma del Cliente ({warranty.customerName})
+      {ws.showSignatures && (
+        <footer className="pt-8 grid grid-cols-2 gap-8 text-center text-[11px] text-slate-600">
+          <div className="space-y-1.5 flex flex-col justify-end">
+            <div className="border-t border-slate-400 pt-2 font-medium text-slate-800">
+              {ws.customerSignatureLabel}
+              {ws.includeCustomerNameInSignature
+                ? ` (${warranty.customerName})`
+                : ''}
+            </div>
+            {ws.customerSignatureSubtext && (
+              <p className="text-[10px] text-slate-500">
+                {ws.customerSignatureSubtext}
+              </p>
+            )}
           </div>
-          <p className="text-[10px] text-slate-500">
-            Recibí equipo en buen estado y acepto términos de garantía
-          </p>
-        </div>
-        <div className="space-y-1.5">
-          <div className="border-t border-slate-400 pt-2 font-medium text-slate-800">
-            Sello y Firma Autorizada · {settings.businessName}
+          <div className="space-y-1.5 flex flex-col justify-end">
+            {ws.authorizedStampDataUrl && (
+              <img
+                src={ws.authorizedStampDataUrl}
+                alt="Sello y firma autorizada"
+                className="h-12 w-auto max-w-[160px] object-contain mx-auto mb-1"
+              />
+            )}
+            <div className="border-t border-slate-400 pt-2 font-medium text-slate-800">
+              {ws.storeSignatureLabel} · {effectiveBusinessName}
+            </div>
+            {ws.storeSignatureSubtext && (
+              <p className="text-[10px] text-slate-500 font-mono">
+                {ws.storeSignatureSubtext}: {warranty.warrantyCode}
+              </p>
+            )}
           </div>
-          <p className="text-[10px] text-slate-500 font-mono">
-            Validación: {warranty.warrantyCode}
-          </p>
-        </div>
-      </footer>
+        </footer>
+      )}
+
+      {ws.footerDisclaimer.trim() && (
+        <p className="mt-5 pt-3 border-t border-slate-100 text-center text-[10px] text-slate-400 whitespace-pre-line">
+          {ws.footerDisclaimer}
+        </p>
+      )}
     </article>
   );
 }
@@ -259,6 +397,7 @@ export function WarrantySheetModal({
   sale,
   products = [],
   settings,
+  warrantySettings = DEFAULT_WARRANTY_SHEET_SETTINGS,
   onClose,
   onOpenReceipt,
 }: {
@@ -266,6 +405,7 @@ export function WarrantySheetModal({
   sale?: Sale | null;
   products?: Product[];
   settings: ReceiptSettings;
+  warrantySettings?: WarrantySheetSettings;
   onClose: () => void;
   onOpenReceipt?: () => void;
 }) {
@@ -403,6 +543,7 @@ export function WarrantySheetModal({
                 sale={sale}
                 product={matchedProduct}
                 settings={settings}
+                warrantySettings={warrantySettings}
                 isLast={idx === visibleWarranties.length - 1}
               />
             );

@@ -1,13 +1,18 @@
 {
-  "name": "react-example",
+  "name": "nexocell-studio",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Sistema de escritorio sin conexión para inventario móvil QR, punto de venta, garantías, reparaciones y reportes diarios.",
+  "author": "NexoCell Studio",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "electron:build:win": "vite build && electron-builder --win",
+    "electron:dir": "vite build && electron-builder --dir",
+    "clean": "rm -rf dist release server.js",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -36,10 +41,51 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.12",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
     "vite-plugin-pwa": "^2.0.0"
+  },
+  "build": {
+    "appId": "com.nexocell.studio",
+    "productName": "NexoCell Studio",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/pwa-512x512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NexoCell Studio",
+      "artifactName": "NexoCell-Studio-Instalador-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "NexoCell-Studio-Portable-${version}.exe"
+    }
   }
 }

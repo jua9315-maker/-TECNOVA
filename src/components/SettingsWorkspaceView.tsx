@@ -7,6 +7,7 @@ import {
   Palette,
   Receipt,
   Settings,
+  ShieldCheck,
   ShoppingCart,
   Sliders,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import type {
   ReceiptSettings,
   UserProfile,
   VisualCustomizationSettings,
+  WarrantySheetSettings,
 } from '../types/store';
 import { AppAppearanceConfigView } from './AppAppearanceConfigView';
 import { CatalogSettingsView } from './CatalogSettingsView';
@@ -27,12 +29,14 @@ import { InstalledAppConfigView } from './InstalledAppConfigView';
 import { PosConfigView } from './PosConfigView';
 import { PresentationConfigView } from './PresentationConfigView';
 import { ReceiptConfigView } from './ReceiptConfigView';
+import { WarrantySheetConfigView } from './WarrantySheetConfigView';
 
 export type SettingsSection =
   | 'app'
   | 'installed'
   | 'presentation'
   | 'receipt'
+  | 'warranty'
   | 'catalog'
   | 'pos'
   | 'developer';
@@ -44,6 +48,7 @@ export function SettingsWorkspaceView({
   installedSettings,
   developerSettings,
   posSettings,
+  warrantySettings,
   visualCustomization,
   developerProfile,
   section,
@@ -57,6 +62,7 @@ export function SettingsWorkspaceView({
   installedSettings: InstalledAppSettings;
   developerSettings: DeveloperSystemSettings;
   posSettings: PosSettings;
+  warrantySettings: WarrantySheetSettings;
   visualCustomization: VisualCustomizationSettings;
   developerProfile: UserProfile | null;
   section: SettingsSection;
@@ -143,6 +149,18 @@ export function SettingsWorkspaceView({
           </button>
           <button
             type="button"
+            onClick={() => onChangeSection('warranty')}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              section === 'warranty'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            Hoja de Garantía
+          </button>
+          <button
+            type="button"
             onClick={() => onChangeSection('catalog')}
             className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
               section === 'catalog'
@@ -206,6 +224,13 @@ export function SettingsWorkspaceView({
 
       {section === 'receipt' && (
         <ReceiptConfigView settings={receiptSettings} />
+      )}
+
+      {section === 'warranty' && (
+        <WarrantySheetConfigView
+          settings={warrantySettings}
+          receiptSettings={receiptSettings}
+        />
       )}
 
       {section === 'catalog' && (

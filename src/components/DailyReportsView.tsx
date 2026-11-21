@@ -31,6 +31,8 @@ export function DailyReportsView({
   uid,
   actorName,
   viewRole,
+  isDeveloper = false,
+  requireAdminToReopenCash = true,
 }: {
   reports: DailyReport[];
   sales: Sale[];
@@ -38,6 +40,8 @@ export function DailyReportsView({
   uid: string;
   actorName: string;
   viewRole: UserRole;
+  isDeveloper?: boolean;
+  requireAdminToReopenCash?: boolean;
 }) {
   const [selectedDate, setSelectedDate] = useState(getTodayDateKey());
   const [notes, setNotes] = useState('');
@@ -192,11 +196,17 @@ export function DailyReportsView({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => setReopenModalOpen(true)}
+                onClick={() => {
+                  if (isDeveloper || !requireAdminToReopenCash) {
+                    void handleGenerate(false);
+                  } else {
+                    setReopenModalOpen(true);
+                  }
+                }}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-amber-950 bg-amber-300 hover:bg-amber-400 rounded-lg whitespace-nowrap cursor-pointer"
               >
                 <Unlock className="w-3.5 h-3.5" />
-                Abrir Caja (Admin)
+                {isDeveloper ? 'Abrir Caja (Desarrollador)' : 'Abrir Caja (Admin)'}
               </button>
             ) : (
               !isLockedForStaff && (

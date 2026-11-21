@@ -36,7 +36,7 @@ export type ProductCondition = string;
 export const PAYMENT_METHODS = ['Efectivo', 'Tarjeta', 'Transferencia', 'Mixto'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-export const WARRANTY_STATUSES = ['Vigente', 'En Revisión', 'Reclamada', 'Vencida'] as const;
+export const WARRANTY_STATUSES = ['Vigente', 'En Revisión', 'Reclamada', 'Vencida', 'Anulada'] as const;
 export type WarrantyStatus = (typeof WARRANTY_STATUSES)[number];
 
 export const REPAIR_STATUSES = [
@@ -153,13 +153,15 @@ export function resolveUserAllowedTabs(
   allowedTabs?: NavTab[],
   username?: string
 ): NavTab[] {
+  if (role === 'developer') {
+    return [...DEFAULT_DEVELOPER_MENU_TABS];
+  }
+
   const validIds = new Set<NavTab>(MENU_PERMISSION_OPTIONS.map((o) => o.id));
   const fallback =
-    role === 'developer'
-      ? DEFAULT_DEVELOPER_MENU_TABS
-      : role === 'admin'
-        ? DEFAULT_ADMIN_MENU_TABS
-        : DEFAULT_STAFF_MENU_TABS;
+    role === 'admin'
+      ? DEFAULT_ADMIN_MENU_TABS
+      : DEFAULT_STAFF_MENU_TABS;
 
   const base =
     Array.isArray(allowedTabs) && allowedTabs.length > 0
@@ -173,18 +175,10 @@ export function resolveUserAllowedTabs(
   }
 
   // Solo el rol Desarrollador puede ver y acceder a Opciones ('settings')
-  const filtered =
-    role === 'developer'
-      ? base
-      : base.filter((tab) => tab !== 'settings');
+  const filtered: NavTab[] = base.filter((tab) => tab !== 'settings');
 
   if (filtered.length === 0) {
     filtered.push(...fallback);
-  }
-
-  if (role === 'developer') {
-    if (!filtered.includes('sales')) filtered.push('sales');
-    if (!filtered.includes('settings')) filtered.push('settings');
   }
 
   if (username && username.toLowerCase() === BOOTSTRAP_ADMIN_USERNAME) {
@@ -298,12 +292,21 @@ export interface Sale {
   items: SaleLineItem[];
   subtotal: number;
   discount: number;
+  taxRate?: number;
+  taxAmount?: number;
+  taxIncluded?: boolean;
+  taxLabel?: string;
   total: number;
+  amountTendered?: number;
+  changeAmount?: number;
   totalCost: number;
   profit: number;
   sellerUid: string;
   sellerName: string;
   status: 'Completada' | 'Anulada';
+  cancelReason?: string;
+  cancelledByName?: string;
+  cancelledAtMs?: number;
   storeId: string;
   createdAt?: StoreTimestamp | null;
   updatedAt?: StoreTimestamp | null;
@@ -389,6 +392,9 @@ export interface ReceiptSettings {
   showImei: boolean;
   showSeller: boolean;
   showWarrantyNote: boolean;
+  showCashChange?: boolean;
+  showTax?: boolean;
+  taxLabel?: string;
   footerMessage: string;
   updatedAtMs?: number;
 }
@@ -406,6 +412,9 @@ export const DEFAULT_RECEIPT_SETTINGS: ReceiptSettings = {
   showImei: true,
   showSeller: true,
   showWarrantyNote: true,
+  showCashChange: true,
+  showTax: true,
+  taxLabel: 'IVA',
   footerMessage:
     '¡Gracias por su compra! Conserve este comprobante para hacer válida su garantía.',
 };
@@ -491,30 +500,64 @@ export function getLoginFontFamilyCss(fontStyle: LoginFontStyle): string {
   }
 }
 
-export function isHexColorDark(hex: string): boolean {
+export function isCssGradient(value: string): boolean {
+  return /gradient\(/i.test((value || '').trim());
+}
+
+export function extractHexStops(value: string): string[] {
+  const matches = (value || '').match(/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g);
+  if (!matches) return [];
+  return matches.map((hex) => {
+    const clean = hex.slice(1).toLowerCase();
+    if (clean.length === 3) {
+      return `#${clean[0]}${clean[0]}${clean[1]}${clean[1]}${clean[2]}${clean[2]}`;
+    }
+    return `#${clean}`;
+  });
+}
+
+export function extractPrimaryHex(value: string, fallback = '#0f172a'): string {
+  const stops = extractHexStops(value);
+  return stops[0] || fallback;
+}
+
+function getHexLuminance(hex: string): number | null {
   const clean = hex.replace('#', '').trim();
-  if (clean.length !== 6) return false;
+  if (clean.length !== 6) return null;
   const r = parseInt(clean.slice(0, 2), 16);
   const g = parseInt(clean.slice(2, 4), 16);
   const b = parseInt(clean.slice(4, 6), 16);
-  if ([r, g, b].some((n) => Number.isNaN(n))) return false;
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance < 0.52;
+  if ([r, g, b].some((n) => Number.isNaN(n))) return null;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 }
 
-export function darkenHexColor(hex: string, amount = 0.16): string {
-  const clean = hex.replace('#', '').trim();
-  if (clean.length !== 6) return hex;
+export function isHexColorDark(colorOrGradient: string): boolean {
+  const stops = extractHexStops(colorOrGradient);
+  if (stops.length === 0) return false;
+  const luminances = stops
+    .map((stop) => getHexLuminance(stop))
+    .filter((l): l is number => l !== null);
+  if (luminances.length === 0) return false;
+  const avgLuminance =
+    luminances.reduce((acc, l) => acc + l, 0) / luminances.length;
+  return avgLuminance < 0.52;
+}
+
+export function darkenHexColor(hexOrGradient: string, amount = 0.16): string {
+  const primary = extractPrimaryHex(hexOrGradient, '');
+  if (!primary) return hexOrGradient;
+  const clean = primary.replace('#', '');
   const r = Math.max(0, Math.round(parseInt(clean.slice(0, 2), 16) * (1 - amount)));
   const g = Math.max(0, Math.round(parseInt(clean.slice(2, 4), 16) * (1 - amount)));
   const b = Math.max(0, Math.round(parseInt(clean.slice(4, 6), 16) * (1 - amount)));
-  if ([r, g, b].some((n) => Number.isNaN(n))) return hex;
+  if ([r, g, b].some((n) => Number.isNaN(n))) return primary;
   return `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
 }
 
-export function mixHexWithWhite(hex: string, whiteRatio = 0.9): string {
-  const clean = hex.replace('#', '').trim();
-  if (clean.length !== 6) return '#eff6ff';
+export function mixHexWithWhite(hexOrGradient: string, whiteRatio = 0.9): string {
+  const primary = extractPrimaryHex(hexOrGradient, '');
+  if (!primary) return '#eff6ff';
+  const clean = primary.replace('#', '');
   const r = parseInt(clean.slice(0, 2), 16);
   const g = parseInt(clean.slice(2, 4), 16);
   const b = parseInt(clean.slice(4, 6), 16);
@@ -722,6 +765,7 @@ export interface DeveloperSystemSettings {
   maxPosDiscountPercent: number;
   allowNegativeStockSale: boolean;
   requireAdminToReopenCash: boolean;
+  requireAdminToCancelSale: boolean;
   autoOpenWarrantyOnPhoneSale: boolean;
   showDevRoleSwitcher: boolean;
   showOfflineBanner: boolean;
@@ -739,6 +783,7 @@ export const DEFAULT_DEVELOPER_SYSTEM_SETTINGS: DeveloperSystemSettings = {
   maxPosDiscountPercent: 100,
   allowNegativeStockSale: false,
   requireAdminToReopenCash: true,
+  requireAdminToCancelSale: true,
   autoOpenWarrantyOnPhoneSale: true,
   showDevRoleSwitcher: true,
   showOfflineBanner: true,
@@ -779,6 +824,10 @@ export interface PosSettings {
   posTitle: string;
   cartSectionTitle: string;
   checkoutButtonLabel: string;
+  enableTax?: boolean;
+  taxRatePercent?: number;
+  taxMode?: 'included' | 'added';
+  taxLabel?: string;
   updatedAtMs?: number;
 }
 
@@ -809,6 +858,188 @@ export const DEFAULT_POS_SETTINGS: PosSettings = {
   posTitle: 'Punto de Venta y Facturación',
   cartSectionTitle: 'Área de Ventas',
   checkoutButtonLabel: 'Cobrar y Emitir Garantías',
+  enableTax: true,
+  taxRatePercent: 16,
+  taxMode: 'included',
+  taxLabel: 'IVA',
+};
+
+export type WarrantySheetPaperDensity = 'compact' | 'normal' | 'spacious';
+
+export interface WarrantySheetSettings {
+  showLogo: boolean;
+  customLogoDataUrl: string;
+  businessName: string;
+  tagline: string;
+  address: string;
+  phone: string;
+  taxId: string;
+  badgeLabel: string;
+  documentTitle: string;
+  accentColor: string;
+  headerBorderColor: string;
+  showQrCode: boolean;
+
+  showCustomerSection: boolean;
+  customerSectionTitle: string;
+  customerNameLabel: string;
+  showCustomerPhone: boolean;
+  customerPhoneLabel: string;
+  showSaleFolio: boolean;
+  saleFolioLabel: string;
+  showSellerName: boolean;
+  sellerNameLabel: string;
+
+  showCoverageSection: boolean;
+  coverageSectionTitle: string;
+  showPurchaseDate: boolean;
+  purchaseDateLabel: string;
+  showExpiresDate: boolean;
+  expiresDateLabel: string;
+  showDuration: boolean;
+  durationLabel: string;
+  showStatus: boolean;
+  statusLabel: string;
+
+  showDeviceSection: boolean;
+  deviceSectionTitle: string;
+  deviceColumnHeader: string;
+  showBrandAndCondition: boolean;
+  showImeiColumn: boolean;
+  imeiColumnHeader: string;
+  showSpecsColumn: boolean;
+  specsColumnHeader: string;
+  showPriceColumn: boolean;
+  priceColumnHeader: string;
+
+  showTermsSection: boolean;
+  termsSectionTitle: string;
+  termsList: string[];
+  showNotesBlock: boolean;
+  notesLabel: string;
+  extraInfoNote: string;
+
+  showSignatures: boolean;
+  customerSignatureLabel: string;
+  includeCustomerNameInSignature: boolean;
+  customerSignatureSubtext: string;
+  storeSignatureLabel: string;
+  storeSignatureSubtext: string;
+  authorizedStampDataUrl: string;
+  footerDisclaimer: string;
+  paperDensity: WarrantySheetPaperDensity;
+  warrantyTerms?: WarrantyTermItem[];
+  updatedAtMs?: number;
+}
+
+export interface WarrantyTermItem {
+  id: string;
+  text: string;
+  enabled: boolean;
+}
+
+export const DEFAULT_WARRANTY_SHEET_TERMS: string[] = [
+  'Esta garantía cubre exclusivamente fallas o defectos de fabricación en hardware y funcionamiento interno durante {meses} a partir de la fecha de compra ({fechaCompra} al {fechaVencimiento}).',
+  'Para hacer válida la garantía es obligatorio presentar esta Hoja de Garantía junto con el comprobante de compra y verificar que el número de IMEI / Serie coincida con el dispositivo.',
+  'La garantía queda anulada automáticamente si el equipo presenta rastros de humedad o líquidos, golpes, pantalla estrellada, chasis doblado, sobrecarga eléctrica, manipulación por servicio técnico externo o sellos de seguridad removidos.',
+  'Los accesorios incluidos (cables, adaptadores, audífonos o fundas) y las baterías están sujetos a desgaste normal y revisión previa en banco técnico.',
+];
+
+export const DEFAULT_WARRANTY_TERM_ITEMS: WarrantyTermItem[] =
+  DEFAULT_WARRANTY_SHEET_TERMS.map((text, idx) => ({
+    id: `term_base_${idx + 1}`,
+    text,
+    enabled: true,
+  }));
+
+export function resolveWarrantyTermItems(
+  settings?: Partial<WarrantySheetSettings>
+): WarrantyTermItem[] {
+  if (Array.isArray(settings?.warrantyTerms)) {
+    return settings.warrantyTerms
+      .filter((t) => t && typeof t.text === 'string' && t.text.trim().length > 0)
+      .map((t, idx) => ({
+        id: t.id || `term_${idx + 1}`,
+        text: t.text,
+        enabled: t.enabled !== false,
+      }));
+  }
+  if (Array.isArray(settings?.termsList)) {
+    return settings.termsList
+      .filter((t) => typeof t === 'string' && t.trim().length > 0)
+      .map((text, idx) => ({
+        id: `term_${idx + 1}`,
+        text,
+        enabled: true,
+      }));
+  }
+  return DEFAULT_WARRANTY_TERM_ITEMS.map((t) => ({ ...t }));
+}
+
+export const DEFAULT_WARRANTY_SHEET_SETTINGS: WarrantySheetSettings = {
+  showLogo: true,
+  customLogoDataUrl: '',
+  businessName: '',
+  tagline: '',
+  address: '',
+  phone: '',
+  taxId: '',
+  badgeLabel: 'Póliza Oficial',
+  documentTitle: 'HOJA DE GARANTÍA',
+  accentColor: '#1d4ed8',
+  headerBorderColor: '#0f172a',
+  showQrCode: true,
+
+  showCustomerSection: true,
+  customerSectionTitle: 'Datos del Cliente y Venta',
+  customerNameLabel: 'Cliente:',
+  showCustomerPhone: true,
+  customerPhoneLabel: 'Teléfono:',
+  showSaleFolio: true,
+  saleFolioLabel: 'Folio de Venta:',
+  showSellerName: true,
+  sellerNameLabel: 'Atendido por:',
+
+  showCoverageSection: true,
+  coverageSectionTitle: 'Cobertura y Vigencia',
+  showPurchaseDate: true,
+  purchaseDateLabel: 'Fecha de Compra:',
+  showExpiresDate: true,
+  expiresDateLabel: 'Vencimiento:',
+  showDuration: true,
+  durationLabel: 'Duración:',
+  showStatus: true,
+  statusLabel: 'Estado Actual:',
+
+  showDeviceSection: true,
+  deviceSectionTitle: 'Equipo Cubierto por Esta Garantía',
+  deviceColumnHeader: 'Equipo / Modelo',
+  showBrandAndCondition: true,
+  showImeiColumn: true,
+  imeiColumnHeader: 'IMEI / Número de Serie',
+  showSpecsColumn: true,
+  specsColumnHeader: 'Especificaciones',
+  showPriceColumn: true,
+  priceColumnHeader: 'Valor',
+
+  showTermsSection: true,
+  termsSectionTitle: 'Términos y Condiciones de Cobertura',
+  termsList: [...DEFAULT_WARRANTY_SHEET_TERMS],
+  warrantyTerms: DEFAULT_WARRANTY_TERM_ITEMS.map((t) => ({ ...t })),
+  showNotesBlock: true,
+  notesLabel: 'Observaciones:',
+  extraInfoNote: '',
+
+  showSignatures: true,
+  customerSignatureLabel: 'Firma del Cliente',
+  includeCustomerNameInSignature: true,
+  customerSignatureSubtext:
+    'Recibí equipo en buen estado y acepto términos de garantía',
+  storeSignatureLabel: 'Sello y Firma Autorizada',
+  storeSignatureSubtext: 'Validación',
+  authorizedStampDataUrl: '',
+  footerDisclaimer: '',
+  paperDensity: 'normal',
 };
 
 export function sanitizeCode(value: string, maxLen: number): string {

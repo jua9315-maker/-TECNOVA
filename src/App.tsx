@@ -49,6 +49,7 @@ import {
   subscribePosSettings,
   subscribeReceiptSettings,
   subscribeVisualCustomizationSettings,
+  subscribeWarrantySheetSettings,
 } from './lib/localDb';
 import {
   adjustProductStock,
@@ -68,6 +69,8 @@ import {
   DEFAULT_RECEIPT_SETTINGS,
   DEFAULT_STAFF_MENU_TABS,
   DEFAULT_VISUAL_CUSTOMIZATION_SETTINGS,
+  DEFAULT_WARRANTY_SHEET_SETTINGS,
+  extractPrimaryHex,
   getLoginFontFamilyCss,
   getTodayDateKey,
   isHexColorDark,
@@ -89,6 +92,7 @@ import {
   type TeamMember,
   type VisualCustomizationSettings,
   type Warranty,
+  type WarrantySheetSettings,
 } from './types/store';
 
 const TAB_LABELS: Record<NavTab, string> = {
@@ -146,6 +150,8 @@ function WorkspaceApp() {
   const [posSettings, setPosSettings] = useState<PosSettings>(
     DEFAULT_POS_SETTINGS
   );
+  const [warrantySheetSettings, setWarrantySheetSettings] =
+    useState<WarrantySheetSettings>(DEFAULT_WARRANTY_SHEET_SETTINGS);
   const [visualEditorOpen, setVisualEditorOpen] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
 
@@ -169,6 +175,9 @@ function WorkspaceApp() {
     const unsubDeveloperSystem =
       subscribeDeveloperSystemSettings(setDeveloperSystem);
     const unsubPosSettings = subscribePosSettings(setPosSettings);
+    const unsubWarrantySheetSettings = subscribeWarrantySheetSettings(
+      setWarrantySheetSettings
+    );
     return () => {
       unsubLoginPresentation();
       unsubAppAppearance();
@@ -176,6 +185,7 @@ function WorkspaceApp() {
       unsubInstalledApp();
       unsubDeveloperSystem();
       unsubPosSettings();
+      unsubWarrantySheetSettings();
     };
   }, []);
 
@@ -186,7 +196,7 @@ function WorkspaceApp() {
       '--app-font-sans',
       getLoginFontFamilyCss(appAppearance.fontStyle)
     );
-    const accent = appAppearance.accentColor || '#1d4ed8';
+    const accent = extractPrimaryHex(appAppearance.accentColor || '#1d4ed8', '#1d4ed8');
     root.style.setProperty('--color-blue-700', accent);
     root.style.setProperty('--color-blue-600', accent);
     root.style.setProperty('--color-blue-800', darkenHexColor(accent, 0.16));
@@ -374,8 +384,10 @@ function WorkspaceApp() {
       ? 'admin'
       : 'staff';
 
-  const canUseVisualEditor =
+  const isFullDeveloper =
     actualRole === 'developer' && activeViewRole === 'developer';
+
+  const canUseVisualEditor = isFullDeveloper;
 
   useEffect(() => {
     if (!canUseVisualEditor && visualEditorOpen) {
@@ -483,7 +495,7 @@ function WorkspaceApp() {
     <div
       id="app-shell"
       className="min-h-screen flex flex-col lg:flex-row"
-      style={{ backgroundColor: appAppearance.canvasBgColor || '#f8fafc' }}
+      style={{ background: appAppearance.canvasBgColor || '#f8fafc' }}
     >
       {/* Desktop Sidebar (256px — visible on Panel Principal, auto-hidden on Punto de Venta y demás ventanas) */}
       {showDesktopSidebar && (
@@ -491,7 +503,7 @@ function WorkspaceApp() {
           className={`hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 border-r no-print ${
             isSidebarDark ? 'border-slate-700/60' : 'border-slate-200'
           }`}
-          style={{ backgroundColor: appAppearance.sidebarBgColor || '#ffffff' }}
+          style={{ background: appAppearance.sidebarBgColor || '#ffffff' }}
         >
         <div
           className={`h-16 px-6 flex items-center justify-between gap-2 border-b ${
@@ -559,7 +571,7 @@ function WorkspaceApp() {
                 style={
                   active
                     ? {
-                        backgroundColor: appAppearance.primaryColor || '#0f172a',
+                        background: appAppearance.primaryColor || '#0f172a',
                         color: isPrimaryDark ? '#ffffff' : '#0f172a',
                       }
                     : undefined
@@ -682,7 +694,7 @@ function WorkspaceApp() {
             className={`w-72 h-full border-r flex flex-col shadow-2xl ${
               isSidebarDark ? 'border-slate-700/60' : 'border-slate-200'
             }`}
-            style={{ backgroundColor: appAppearance.sidebarBgColor || '#ffffff' }}
+            style={{ background: appAppearance.sidebarBgColor || '#ffffff' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div
@@ -738,7 +750,7 @@ function WorkspaceApp() {
                     style={
                       active
                         ? {
-                            backgroundColor: appAppearance.primaryColor || '#0f172a',
+                            background: appAppearance.primaryColor || '#0f172a',
                             color: isPrimaryDark ? '#ffffff' : '#0f172a',
                           }
                         : undefined
@@ -839,7 +851,7 @@ function WorkspaceApp() {
           className={`h-16 border-b px-4 sm:px-8 flex items-center justify-between gap-4 sticky top-0 z-30 no-print ${
             isHeaderDark ? 'border-slate-700/60' : 'border-slate-200'
           }`}
-          style={{ backgroundColor: appAppearance.headerBgColor || '#ffffff' }}
+          style={{ background: appAppearance.headerBgColor || '#ffffff' }}
         >
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -971,6 +983,7 @@ function WorkspaceApp() {
                     requireAdminToReopenCash={
                       developerSystem.requireAdminToReopenCash
                     }
+                    isDeveloper={isFullDeveloper}
                   />
                 ) : (
                   <StaffDashboard
@@ -1011,6 +1024,8 @@ function WorkspaceApp() {
                   uid={user.uid}
                   sellerName={actorName}
                   viewRole={effectiveViewRole}
+                  isDeveloper={isFullDeveloper}
+                  currentUsername={profile?.username || ''}
                   receiptSettings={receiptSettings}
                   currencyCode={appAppearance.currencyCode}
                   onChangeCurrency={(nextCode: AppCurrencyCode) => {
@@ -1022,7 +1037,7 @@ function WorkspaceApp() {
                   }}
                   onOpenScanner={() => setScannerOpen(true)}
                   onOpenReceiptSettings={
-                    allowedTabs.includes('settings')
+                    isFullDeveloper && allowedTabs.includes('settings')
                       ? () => {
                           setSettingsSection('receipt');
                           setActiveTab('settings');
@@ -1033,6 +1048,7 @@ function WorkspaceApp() {
                   onConsumeQueuedProduct={() => setQueuedPosProduct(null)}
                   developerSettings={developerSystem}
                   posSettings={posSettings}
+                  warrantySheetSettings={warrantySheetSettings}
                 />
               )}
 
@@ -1043,18 +1059,22 @@ function WorkspaceApp() {
                   repairs={repairs}
                   warranties={warranties}
                   receiptSettings={receiptSettings}
+                  warrantySheetSettings={warrantySheetSettings}
                   uid={user.uid}
                   actorName={actorName}
                   viewRole={effectiveViewRole}
+                  isDeveloper={isFullDeveloper}
+                  currentUsername={profile?.username || ''}
+                  requireAdminToCancelSale={
+                    developerSystem.requireAdminToCancelSale ?? true
+                  }
                   onOpenPos={
                     allowedTabs.includes('pos')
                       ? () => setActiveTab('pos')
                       : undefined
                   }
                   onOpenReceiptSettings={
-                    actualRole === 'developer' &&
-                    activeViewRole === 'developer' &&
-                    allowedTabs.includes('settings')
+                    isFullDeveloper && allowedTabs.includes('settings')
                       ? () => {
                           setSettingsSection('receipt');
                           setActiveTab('settings');
@@ -1070,6 +1090,7 @@ function WorkspaceApp() {
                   products={products}
                   sales={sales}
                   receiptSettings={receiptSettings}
+                  warrantySheetSettings={warrantySheetSettings}
                   uid={user.uid}
                   focusedWarranty={focusedWarranty}
                   onClearFocusedWarranty={() => setFocusedWarranty(null)}
@@ -1103,6 +1124,10 @@ function WorkspaceApp() {
                   uid={user.uid}
                   actorName={actorName}
                   viewRole={effectiveViewRole}
+                  isDeveloper={isFullDeveloper}
+                  requireAdminToReopenCash={
+                    developerSystem.requireAdminToReopenCash
+                  }
                 />
               )}
 
@@ -1121,6 +1146,7 @@ function WorkspaceApp() {
                   installedSettings={installedApp}
                   developerSettings={developerSystem}
                   posSettings={posSettings}
+                  warrantySettings={warrantySheetSettings}
                   visualCustomization={visualCustomization}
                   developerProfile={profile}
                   section={settingsSection}

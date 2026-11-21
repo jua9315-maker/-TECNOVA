@@ -10,12 +10,14 @@ import {
 } from 'lucide-react';
 import {
   DEFAULT_RECEIPT_SETTINGS,
+  DEFAULT_WARRANTY_SHEET_SETTINGS,
   getTodayDateKey,
   WARRANTY_STATUSES,
   type Product,
   type ReceiptSettings,
   type Sale,
   type Warranty,
+  type WarrantySheetSettings,
   type WarrantyStatus,
 } from '../types/store';
 import {
@@ -30,6 +32,7 @@ export function WarrantiesView({
   products = [],
   sales = [],
   receiptSettings = DEFAULT_RECEIPT_SETTINGS,
+  warrantySheetSettings = DEFAULT_WARRANTY_SHEET_SETTINGS,
   uid,
   focusedWarranty,
   onClearFocusedWarranty,
@@ -39,6 +42,7 @@ export function WarrantiesView({
   products?: Product[];
   sales?: Sale[];
   receiptSettings?: ReceiptSettings;
+  warrantySheetSettings?: WarrantySheetSettings;
   uid: string;
   focusedWarranty: Warranty | null;
   onClearFocusedWarranty: () => void;
@@ -135,6 +139,7 @@ export function WarrantiesView({
       case 'Reclamada':
         return 'text-blue-700';
       case 'Vencida':
+      case 'Anulada':
         return 'text-red-600';
     }
   };
@@ -525,6 +530,7 @@ export function WarrantiesView({
         }
         products={products}
         settings={receiptSettings}
+        warrantySettings={warrantySheetSettings}
         onClose={() => setPrintableWarranty(null)}
       />
     </motion.div>

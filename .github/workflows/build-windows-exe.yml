@@ -1,3 +1,4 @@
+
 name: Generar Instalador Windows (.exe)
 
 on:
@@ -7,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Etiqueta opcional para publicar en GitHub Releases (ej. v1.0.0). Déjalo vacío para descargar desde Artifacts.'
+        description: 'Etiqueta opcional para publicar en GitHub Releases'
         required: false
         default: ''
 
@@ -27,40 +28,49 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+
+      - name: Verificar archivos del proyecto
+        shell: pwsh
+        run: |
+          Write-Host "Verificando package.json..."
+          if (!(Test-Path "package.json")) {
+            throw "No se encontró package.json"
+          }
+          Write-Host "Archivos del proyecto encontrados."
 
       - name: Instalar dependencias
-        run: npm install --include=dev --legacy-peer-deps
+        run: npm install --include=dev
 
-      - name: Compilar aplicación y generar ejecutables Windows (.exe)
+      - name: Compilar aplicación y generar EXE
         run: npm run electron:build:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          WIN_CSC_LINK: ''
-          WIN_CSC_KEY_PASSWORD: ''
 
-      - name: Listar archivos generados (Diagnóstico)
+      - name: Verificar ejecutables generados
         if: always()
+        shell: pwsh
         run: |
-          dir release || echo "Directorio release no encontrado"
+          if (Test-Path "release") {
+            Write-Host "Contenido de release:"
+            Get-ChildItem release -Recurse
+          } else {
+            Write-Host "No se generó release. Revisar los errores del paso de compilación."
+          }
 
-      - name: Subir ejecutables como Artifact descargable
+      - name: Subir ejecutables
         uses: actions/upload-artifact@v4
         with:
           name: TECNOVA-Windows-EXE
-          path: |
-            release/*.exe
-            !release/*.blockmap
+          path: release/*.exe
           if-no-files-found: error
 
-      - name: Publicar en GitHub Releases (cuando hay etiqueta de versión)
+      - name: Publicar GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
           name: TECNOVA ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
           generate_release_notes: true
-          files: |
-            release/*.exe
+          files: release/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

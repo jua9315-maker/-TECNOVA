@@ -27,14 +27,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
 
       - name: Instalar dependencias
-        run: npm install --legacy-peer-deps
+        run: npm install --include=dev --legacy-peer-deps
 
       - name: Compilar aplicación y generar ejecutables Windows (.exe)
         run: npm run electron:build:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          WIN_CSC_LINK: ''
+          WIN_CSC_KEY_PASSWORD: ''
+
+      - name: Listar archivos generados (Diagnóstico)
+        if: always()
+        run: |
+          dir release || echo "Directorio release no encontrado"
 
       - name: Subir ejecutables como Artifact descargable
         uses: actions/upload-artifact@v4

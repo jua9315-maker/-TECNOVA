@@ -926,6 +926,48 @@ export function AppAppearanceConfigView({
                   {previewCurrencyLabel}
                 </span>
               </p>
+
+              {draft.currencyCode === 'NIO' && (
+                <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-slate-700">
+                      Tipo de Cambio (1 USD = X NIO)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('https://open.er-api.com/v6/latest/USD');
+                          if (!res.ok) return;
+                          const data = (await res.json()) as { rates?: { NIO?: number } };
+                          const r = data?.rates?.NIO;
+                          if (r && r > 0) {
+                            updateDraft({ exchangeRateNio: Number(r.toFixed(4)) });
+                          }
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      className="text-[11px] font-semibold text-blue-700 hover:underline"
+                    >
+                      Actualizar Automático
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="1"
+                    value={draft.exchangeRateNio ?? 36.62}
+                    onChange={(e) =>
+                      updateDraft({ exchangeRateNio: Number(e.target.value) || 36.62 })
+                    }
+                    className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-200 rounded-lg"
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    Las cantidades se multiplican automáticamente por este tipo de cambio para mostrar la conversión real en córdobas.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

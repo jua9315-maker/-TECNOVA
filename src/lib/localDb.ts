@@ -831,6 +831,17 @@ export async function updateLocalAccountPassword(
   await notifyStore('accounts');
 }
 
+export async function deleteLocalAccount(uid: string): Promise<void> {
+  await ensureLocalDbReady();
+  const existing = await getOneRaw<StoredAccountRecord>('accounts', uid);
+  if (!existing) throw new Error('Usuario no encontrado.');
+  if (existing.username.toLowerCase() === 'desarrollador') {
+    throw new Error('No se puede eliminar la cuenta principal del desarrollador.');
+  }
+  await deleteOneRaw('accounts', uid);
+  await notifyStore('accounts');
+}
+
 export async function updateOwnDeveloperProfile(
   uid: string,
   updates: { displayName?: string; newPassword?: string }

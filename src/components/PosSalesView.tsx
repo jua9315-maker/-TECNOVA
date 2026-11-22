@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Ban,
+  Camera,
   CheckCircle2,
   Coins,
   Minus,
@@ -43,7 +44,7 @@ import {
 } from '../types/store';
 import { processPosSale } from '../lib/storeOperations';
 import { subscribeCustomProductCategories } from '../lib/localDb';
-import { QrCodeImg } from './BarcodeQrToolkit';
+import { extractCodeToken, QrCodeImg } from './BarcodeQrToolkit';
 import { CancelSaleModal, CancelSalePanel } from './CancelSaleSection';
 import { ReceiptPreviewModal } from './ReceiptPreviewModal';
 import { WarrantySheetModal } from './WarrantySheetModal';
@@ -157,7 +158,7 @@ export function PosSalesView({
   onChangeCurrency?: (code: AppCurrencyCode) => void;
   onOpenScanner: () => void;
   onOpenReceiptSettings?: () => void;
-  queuedProduct: Product | null;
+  queuedProduct: { product: Product; seq: number } | null;
   onConsumeQueuedProduct: () => void;
   developerSettings?: DeveloperSystemSettings;
   posSettings?: PosSettings;
@@ -254,8 +255,8 @@ export function PosSalesView({
   };
 
   useEffect(() => {
-    if (queuedProduct) {
-      addToCart(queuedProduct);
+    if (queuedProduct?.product) {
+      addToCart(queuedProduct.product);
       setSubTab('pos');
       onConsumeQueuedProduct();
     }
@@ -723,27 +724,59 @@ export function PosSalesView({
               </div>
             </div>
 
-            {/* Barra de búsqueda en tiempo real + Filtros por categorías */}
+            {/* Barra de búsqueda en tiempo real + Escaneo directo + Filtros por categorías */}
             <div className="space-y-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Buscar por nombre, código SKU, barra, marca o categoría..."
-                  className="w-full pl-9 pr-9 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:bg-white"
-                />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch('')}
-                    aria-label="Limpiar búsqueda"
-                    className="p-1 text-slate-400 hover:text-slate-700 absolute right-2.5 top-1/2 -translate-y-1/2 rounded"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      const token = extractCodeToken(search);
+                      if (!token) return;
+                      const lower = token.toLowerCase();
+                      const exact = products.find(
+                        (p) =>
+                          p.active &&
+                          (p.barcode.toLowerCase() === lower ||
+                            p.sku.toLowerCase() === lower ||
+                            p.qrCodeData.toLowerCase() === lower)
+                      );
+                      const candidate =
+                        exact || (filteredProducts.length === 1 ? filteredProducts[0] : undefined);
+                      if (candidate) {
+                        e.preventDefault();
+                        addToCart(candidate);
+                        setSearch('');
+                      }
+                    }}
+                    placeholder="Buscar o escanear código de barra, SKU, nombre o marca..."
+                    className="w-full pl-9 pr-9 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-700 focus:bg-white"
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => setSearch('')}
+                      aria-label="Limpiar búsqueda"
+                      className="p-1 text-slate-400 hover:text-slate-700 absolute right-2.5 top-1/2 -translate-y-1/2 rounded"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenScanner}
+                  title="Escanear código de barras con cámara o teléfono"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span className="hidden sm:inline">Escanear con Teléfono</span>
+                  <span className="sm:hidden">Escanear</span>
+                </button>
               </div>
 
               {posSettings.showCategoryTabs && (

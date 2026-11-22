@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import {
   AlertCircle,
   Barcode,
+  Camera,
   CheckCircle2,
   Download,
   Edit3,
@@ -45,7 +46,13 @@ import {
   addCustomProductCategory,
   subscribeCustomProductCategories,
 } from '../lib/localDb';
-import { BarcodeSvg, ProductLabelModal, QrCodeImg } from './BarcodeQrToolkit';
+import {
+  BarcodeCaptureModal,
+  BarcodeSvg,
+  extractCodeToken,
+  ProductLabelModal,
+  QrCodeImg,
+} from './BarcodeQrToolkit';
 
 const PRESET_IMAGES = DEFAULT_CATALOG_IMAGE_PRESETS;
 
@@ -80,6 +87,8 @@ export function InventoryView({
   pendingEditProduct,
   pendingNewCode,
   onClearPending,
+  incomingScan,
+  onConsumeIncomingScan,
   developerSettings = DEFAULT_DEVELOPER_SYSTEM_SETTINGS,
 }: {
   products: Product[];
@@ -90,11 +99,14 @@ export function InventoryView({
   pendingEditProduct: Product | null;
   pendingNewCode: string | null;
   onClearPending: () => void;
+  incomingScan?: { code: string; seq: number } | null;
+  onConsumeIncomingScan?: () => void;
   developerSettings?: DeveloperSystemSettings;
 }) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'Todos' | ProductCategory>('Todos');
   const [modalOpen, setModalOpen] = useState(false);
+  const [barcodeCaptureOpen, setBarcodeCaptureOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [labelProduct, setLabelProduct] = useState<Product | null>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
@@ -266,6 +278,46 @@ export function InventoryView({
       onClearPending();
     }
   }, [pendingEditProduct, pendingNewCode, onClearPending]);
+
+  useEffect(() => {
+    if (!incomingScan?.code) return;
+    const rawToken = extractCodeToken(incomingScan.code);
+    const cleanBarcode = sanitizeCode(rawToken, 64);
+    if (!cleanBarcode) {
+      onConsumeIncomingScan?.();
+      return;
+    }
+
+    if (modalOpen) {
+      const qrPrefix = developerSettings.qrCodePrefix || 'TECNOVA';
+      setForm((prev) => ({
+        ...prev,
+        barcode: cleanBarcode,
+        qrCodeData: `${qrPrefix}:SKU=${prev.sku}|BAR=${cleanBarcode}`,
+      }));
+      setInventoryNotice(`Código escaneado asignado al formulario: ${cleanBarcode}`);
+    } else {
+      const existing = products.find(
+        (p) =>
+          p.barcode.toLowerCase() === cleanBarcode.toLowerCase() ||
+          p.sku.toLowerCase() === cleanBarcode.toLowerCase() ||
+          p.qrCodeData.toLowerCase() === rawToken.toLowerCase()
+      );
+      if (existing) {
+        openEditModal(existing);
+        setInventoryNotice(
+          `Producto localizado (${existing.name}). Puedes editar datos o ajustar su stock.`
+        );
+      } else {
+        openNewModal(cleanBarcode);
+        setInventoryNotice(
+          `Código nuevo recibido (${cleanBarcode}). Completa los datos para registrarlo.`
+        );
+      }
+    }
+
+    onConsumeIncomingScan?.();
+  }, [incomingScan, modalOpen, products, developerSettings.qrCodePrefix, onConsumeIncomingScan]);
 
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -992,27 +1044,64 @@ export function InventoryView({
 
               {/* Barcode & QR Section */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-slate-800 inline-flex items-center gap-1.5">
                     <Barcode className="w-4 h-4 text-blue-700" />
                     Identificación por Código de Barras y QR
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const code = `750${Math.floor(1000000000 + Math.random() * 8999999999)}`;
-                      const qrPrefix = developerSettings.qrCodePrefix || 'TECNOVA';
-                      setForm((prev) => ({
-                        ...prev,
-                        barcode: code,
-                        qrCodeData: `${qrPrefix}:SKU=${prev.sku}|BAR=${code}`,
-                      }));
-                    }}
-                    className="text-xs font-medium text-blue-700 hover:underline"
-                  >
-                    Generar código nuevo
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setBarcodeCaptureOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      Escanear con Teléfono / Cámara
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const code = `750${Math.floor(1000000000 + Math.random() * 8999999999)}`;
+                        const qrPrefix = developerSettings.qrCodePrefix || 'TECNOVA';
+                        setForm((prev) => ({
+                          ...prev,
+                          barcode: code,
+                          qrCodeData: `${qrPrefix}:SKU=${prev.sku}|BAR=${code}`,
+                        }));
+                      }}
+                      className="text-xs font-medium text-blue-700 hover:underline px-1.5 py-1"
+                    >
+                      Generar código nuevo
+                    </button>
+                  </div>
                 </div>
+
+                {(() => {
+                  const cleanBar = form.barcode.trim().toLowerCase();
+                  const duplicateProduct = cleanBar
+                    ? products.find(
+                        (p) =>
+                          p.id !== editingProduct?.id &&
+                          p.barcode.trim().toLowerCase() === cleanBar
+                      )
+                    : undefined;
+                  if (!duplicateProduct) return null;
+                  return (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
+                      <span>
+                        Este código ya pertenece a <strong>{duplicateProduct.name}</strong> (Stock:{' '}
+                        {duplicateProduct.stock}).
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(duplicateProduct)}
+                        className="px-2.5 py-1 text-[11px] font-semibold bg-amber-700 hover:bg-amber-800 text-white rounded-md"
+                      >
+                        Abrir producto existente
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
@@ -1036,22 +1125,33 @@ export function InventoryView({
                   </div>
                   <div>
                     <label className="block text-xs text-slate-600 mb-1">Código de Barras</label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={64}
-                      value={form.barcode}
-                      onChange={(e) => {
-                        const barcode = sanitizeCode(e.target.value, 64);
-                        const qrPrefix = developerSettings.qrCodePrefix || 'TECNOVA';
-                        setForm({
-                          ...form,
-                          barcode,
-                          qrCodeData: `${qrPrefix}:SKU=${form.sku}|BAR=${barcode}`,
-                        });
-                      }}
-                      className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-lg"
-                    />
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        required
+                        maxLength={64}
+                        value={form.barcode}
+                        onChange={(e) => {
+                          const barcode = sanitizeCode(e.target.value, 64);
+                          const qrPrefix = developerSettings.qrCodePrefix || 'TECNOVA';
+                          setForm({
+                            ...form,
+                            barcode,
+                            qrCodeData: `${qrPrefix}:SKU=${form.sku}|BAR=${barcode}`,
+                          });
+                        }}
+                        className="w-full min-w-0 px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setBarcodeCaptureOpen(true)}
+                        title="Escanear código con cámara"
+                        aria-label="Escanear código con cámara"
+                        className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg shrink-0"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs text-slate-600 mb-1">Payload QR</label>
@@ -1490,6 +1590,23 @@ export function InventoryView({
       )}
 
       <ProductLabelModal product={labelProduct} onClose={() => setLabelProduct(null)} />
+
+      <BarcodeCaptureModal
+        isOpen={barcodeCaptureOpen}
+        title="Escanear Código para Inventario"
+        subtitle="Apunta la cámara de tu teléfono al código de barras del equipo o caja"
+        onDetected={(rawCode) => {
+          const cleanBarcode = sanitizeCode(extractCodeToken(rawCode), 64);
+          if (!cleanBarcode) return;
+          const qrPrefix = developerSettings.qrCodePrefix || 'TECNOVA';
+          setForm((prev) => ({
+            ...prev,
+            barcode: cleanBarcode,
+            qrCodeData: `${qrPrefix}:SKU=${prev.sku}|BAR=${cleanBarcode}`,
+          }));
+        }}
+        onClose={() => setBarcodeCaptureOpen(false)}
+      />
     </motion.div>
   );
 }

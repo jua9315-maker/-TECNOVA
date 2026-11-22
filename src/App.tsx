@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   FileSpreadsheet,
   HardDrive,
@@ -34,7 +34,13 @@ import {
   SettingsWorkspaceView,
   type SettingsSection,
 } from './components/SettingsWorkspaceView';
-import { ScannerModal } from './components/BarcodeQrToolkit';
+import {
+  extractCodeToken,
+  getLanBridgeBaseUrl,
+  playScannerBeep,
+  ScannerModal,
+  type ScannerContextMode,
+} from './components/BarcodeQrToolkit';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import {
   VisualPatchApplier,
@@ -124,6 +130,8 @@ function WorkspaceApp() {
   const [menuDrawerOpen, setMenuDrawerOpen] = useState(false);
   const [dashboardSidebarHidden, setDashboardSidebarHidden] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerContext, setScannerContext] =
+    useState<ScannerContextMode>('general');
 
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
@@ -158,12 +166,36 @@ function WorkspaceApp() {
   // Cross-module action bridges
   const [pendingEditProduct, setPendingEditProduct] = useState<Product | null>(null);
   const [pendingNewCode, setPendingNewCode] = useState<string | null>(null);
-  const [queuedPosProduct, setQueuedPosProduct] = useState<Product | null>(null);
+  const [incomingInventoryScan, setIncomingInventoryScan] = useState<{
+    code: string;
+    seq: number;
+  } | null>(null);
+  const [queuedPosProduct, setQueuedPosProduct] = useState<{
+    product: Product;
+    seq: number;
+  } | null>(null);
+  const [phoneScanBanner, setPhoneScanBanner] = useState<{
+    message: string;
+    kind: 'ok' | 'error';
+  } | null>(null);
   const [focusedWarranty, setFocusedWarranty] = useState<Warranty | null>(null);
   const [focusedRepair, setFocusedRepair] = useState<RepairTicket | null>(null);
   const [prefillRepairWarranty, setPrefillRepairWarranty] = useState<Warranty | null>(
     null
   );
+
+  const productsLatestRef = useRef<Product[]>([]);
+  const allowedTabsLatestRef = useRef<NavTab[]>([]);
+  const developerSettingsLatestRef = useRef(developerSystem);
+  const scanSeqRef = useRef(0);
+
+  useEffect(() => {
+    productsLatestRef.current = products;
+  }, [products]);
+
+  useEffect(() => {
+    developerSettingsLatestRef.current = developerSystem;
+  }, [developerSystem]);
 
   useEffect(() => {
     const unsubLoginPresentation =
@@ -202,7 +234,33 @@ function WorkspaceApp() {
     root.style.setProperty('--color-blue-800', darkenHexColor(accent, 0.16));
     root.style.setProperty('--color-blue-50', mixHexWithWhite(accent, 0.92));
     root.style.setProperty('--color-blue-100', mixHexWithWhite(accent, 0.84));
-    setActiveAppCurrency(appAppearance.currencyCode);
+    setActiveAppCurrency(
+      appAppearance.currencyCode,
+      appAppearance.exchangeRateNio ?? 36.62
+    );
+  }, [appAppearance]);
+
+  useEffect(() => {
+    if (appAppearance.currencyCode !== 'NIO') return;
+    const fetchNioRate = async () => {
+      try {
+        const res = await fetch('https://open.er-api.com/v6/latest/USD');
+        if (!res.ok) return;
+        const data = (await res.json()) as { rates?: { NIO?: number } };
+        const rate = data?.rates?.NIO;
+        if (rate && typeof rate === 'number' && rate > 0) {
+          if (appAppearance.exchangeRateNio !== rate) {
+            await saveStoreAppAppearanceSettings({
+              ...appAppearance,
+              exchangeRateNio: Number(rate.toFixed(4)),
+            });
+          }
+        }
+      } catch {
+        // ignore network error
+      }
+    };
+    void fetchNioRate();
   }, [appAppearance]);
 
   useEffect(() => {
@@ -405,6 +463,91 @@ function WorkspaceApp() {
     setMenuDrawerOpen(false);
   }, [activeTab]);
 
+  useEffect(() => {
+    if (!user || !profile) return;
+    const bridgeBase = getLanBridgeBaseUrl();
+    if (!bridgeBase) return;
+
+    const es = new EventSource(`${bridgeBase}/api/lan-scanner/stream`);
+    const handleScanEvent = (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(String(event.data || '{}')) as {
+          code?: string;
+          mode?: 'pos' | 'inventory';
+        };
+        const rawCode = String(payload.code || '').trim();
+        const token = extractCodeToken(rawCode);
+        if (!token) return;
+
+        const targetMode = payload.mode === 'pos' ? 'pos' : 'inventory';
+        const tabs = allowedTabsLatestRef.current;
+
+        if (targetMode === 'pos') {
+          if (!tabs.includes('pos')) return;
+          const lower = token.toLowerCase();
+          const match = productsLatestRef.current.find(
+            (p) =>
+              p.active &&
+              (p.barcode.toLowerCase() === lower ||
+                p.sku.toLowerCase() === lower ||
+                p.qrCodeData.toLowerCase() === lower)
+          );
+          if (!match) {
+            playScannerBeep('error');
+            setPhoneScanBanner({
+              kind: 'error',
+              message: `Teléfono POS: código ${token} no encontrado en inventario.`,
+            });
+            return;
+          }
+          const allowNegative = Boolean(
+            developerSettingsLatestRef.current.allowNegativeStockSale
+          );
+          if (!allowNegative && match.stock <= 0) {
+            playScannerBeep('error');
+            setPhoneScanBanner({
+              kind: 'error',
+              message: `Teléfono POS: "${match.name}" sin stock disponible.`,
+            });
+            return;
+          }
+          scanSeqRef.current += 1;
+          setQueuedPosProduct({ product: match, seq: scanSeqRef.current });
+          setActiveTab('pos');
+          playScannerBeep('ok');
+          setPhoneScanBanner({
+            kind: 'ok',
+            message: `Escaneado desde teléfono -> POS: ${match.name} (+1)`,
+          });
+        } else {
+          if (!tabs.includes('inventory')) return;
+          scanSeqRef.current += 1;
+          setIncomingInventoryScan({ code: token, seq: scanSeqRef.current });
+          setActiveTab('inventory');
+          playScannerBeep('ok');
+          setPhoneScanBanner({
+            kind: 'ok',
+            message: `Escaneado desde teléfono -> Inventario: ${token}`,
+          });
+        }
+      } catch {
+        // ignore malformed SSE packet
+      }
+    };
+
+    es.addEventListener('scan', handleScanEvent);
+    return () => {
+      es.removeEventListener('scan', handleScanEvent);
+      es.close();
+    };
+  }, [user, profile]);
+
+  useEffect(() => {
+    if (!phoneScanBanner) return;
+    const t = setTimeout(() => setPhoneScanBanner(null), 4000);
+    return () => clearTimeout(t);
+  }, [phoneScanBanner]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
@@ -471,6 +614,13 @@ function WorkspaceApp() {
     }));
 
   const navItems = allNavItems.filter((item) => allowedTabs.includes(item.id));
+  allowedTabsLatestRef.current = allowedTabs;
+
+  const openScannerForContext = (ctx: ScannerContextMode) => {
+    setScannerContext(ctx);
+    setScannerOpen(true);
+  };
+
   const safeNavigate = (tab: NavTab) => {
     if (allowedTabs.includes(tab)) {
       setActiveTab(tab);
@@ -484,7 +634,10 @@ function WorkspaceApp() {
     await adjustProductStock(product, delta, user.uid);
   };
 
-  setActiveAppCurrency(appAppearance.currencyCode);
+  setActiveAppCurrency(
+    appAppearance.currencyCode,
+    appAppearance.exchangeRateNio ?? 36.62
+  );
 
   const isSidebarDark = isHexColorDark(appAppearance.sidebarBgColor);
   const isHeaderDark = isHexColorDark(appAppearance.headerBgColor);
@@ -954,7 +1107,7 @@ function WorkspaceApp() {
                     todayReport={todayReport}
                     allowedTabs={allowedTabs}
                     onNavigate={safeNavigate}
-                    onOpenScanner={() => setScannerOpen(true)}
+                    onOpenScanner={() => openScannerForContext('general')}
                     onSeedCatalog={() => seedInitialStoreCatalog(user.uid, actorName)}
                     onSyncDailyReport={(closeDay) =>
                       syncDailyReportForDate(
@@ -994,7 +1147,7 @@ function WorkspaceApp() {
                     warranties={warranties}
                     allowedTabs={allowedTabs}
                     onNavigate={safeNavigate}
-                    onOpenScanner={() => setScannerOpen(true)}
+                    onOpenScanner={() => openScannerForContext('general')}
                   />
                 ))}
 
@@ -1004,13 +1157,15 @@ function WorkspaceApp() {
                   uid={user.uid}
                   viewRole={effectiveViewRole}
                   onAdjustStock={handleAdjustStock}
-                  onOpenScanner={() => setScannerOpen(true)}
+                  onOpenScanner={() => openScannerForContext('inventory')}
                   pendingEditProduct={pendingEditProduct}
                   pendingNewCode={pendingNewCode}
                   onClearPending={() => {
                     setPendingEditProduct(null);
                     setPendingNewCode(null);
                   }}
+                  incomingScan={incomingInventoryScan}
+                  onConsumeIncomingScan={() => setIncomingInventoryScan(null)}
                   developerSettings={developerSystem}
                 />
               )}
@@ -1029,13 +1184,16 @@ function WorkspaceApp() {
                   receiptSettings={receiptSettings}
                   currencyCode={appAppearance.currencyCode}
                   onChangeCurrency={(nextCode: AppCurrencyCode) => {
-                    setActiveAppCurrency(nextCode);
+                    setActiveAppCurrency(
+                      nextCode,
+                      appAppearance.exchangeRateNio ?? 36.62
+                    );
                     void saveStoreAppAppearanceSettings({
                       ...appAppearance,
                       currencyCode: nextCode,
                     });
                   }}
-                  onOpenScanner={() => setScannerOpen(true)}
+                  onOpenScanner={() => openScannerForContext('pos')}
                   onOpenReceiptSettings={
                     isFullDeveloper && allowedTabs.includes('settings')
                       ? () => {
@@ -1132,7 +1290,11 @@ function WorkspaceApp() {
               )}
 
               {activeTab === 'team' && allowedTabs.includes('team') && (
-                <TeamManagementView members={teamMembers} currentUid={user.uid} />
+                <TeamManagementView
+                  members={teamMembers}
+                  currentUid={user.uid}
+                  isDeveloper={isFullDeveloper}
+                />
               )}
 
               {activeTab === 'settings' &&
@@ -1164,6 +1326,7 @@ function WorkspaceApp() {
       <ScannerModal
         isOpen={scannerOpen}
         onClose={() => setScannerOpen(false)}
+        initialContext={scannerContext}
         products={products}
         warranties={warranties}
         repairs={repairs}
@@ -1180,7 +1343,8 @@ function WorkspaceApp() {
         }}
         onAddToPos={(product) => {
           if (!allowedTabs.includes('pos')) return;
-          setQueuedPosProduct(product);
+          scanSeqRef.current += 1;
+          setQueuedPosProduct({ product, seq: scanSeqRef.current });
           setActiveTab('pos');
         }}
         onLocateWarranty={(w) => {
@@ -1194,6 +1358,26 @@ function WorkspaceApp() {
           setActiveTab('repairs');
         }}
       />
+
+      {phoneScanBanner && (
+        <div
+          className={`fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl border shadow-lg text-xs font-medium flex items-center gap-2 ${
+            phoneScanBanner.kind === 'ok'
+              ? 'bg-emerald-950 text-emerald-100 border-emerald-700'
+              : 'bg-red-950 text-red-100 border-red-700'
+          }`}
+        >
+          <span>{phoneScanBanner.message}</span>
+          <button
+            type="button"
+            onClick={() => setPhoneScanBanner(null)}
+            className="p-0.5 rounded hover:bg-white/10"
+            aria-label="Cerrar notificación"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       <OfflineIndicator visible={developerSystem.showOfflineBanner} />
 

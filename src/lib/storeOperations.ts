@@ -55,6 +55,7 @@ import {
   updateLocalAccountStatusOrRole,
   updateOwnDeveloperProfile,
   verifyAdministratorAuthorization,
+  deleteLocalAccount,
 } from './localDb';
 
 export interface ProductInput {
@@ -984,6 +985,10 @@ export async function updateTeamMemberPassword(
     throw new Error('La nueva contraseña debe tener al menos 6 caracteres.');
   }
   await updateLocalAccountPassword(uid, newPassword);
+}
+
+export async function deleteTeamMemberAccount(uid: string): Promise<void> {
+  await deleteLocalAccount(uid);
 }
 
 export async function seedInitialStoreCatalog(uid: string, userName: string): Promise<void> {

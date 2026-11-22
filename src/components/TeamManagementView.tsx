@@ -27,6 +27,7 @@ import {
 } from '../types/store';
 import {
   createTeamMemberAccount,
+  deleteTeamMemberAccount,
   exportDesktopBackupFile,
   importDesktopBackupFile,
   updateTeamMemberPassword,
@@ -170,9 +171,11 @@ function MenuSelectorGrid({
 export function TeamManagementView({
   members,
   currentUid,
+  isDeveloper = false,
 }: {
   members: TeamMember[];
   currentUid: string;
+  isDeveloper?: boolean;
 }) {
   const [busyUid, setBusyUid] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -301,6 +304,27 @@ export function TeamManagementView({
     setBusyUid(member.uid);
     try {
       await updateUserRoleAndStatus(member, member.role, !member.active);
+    } finally {
+      setBusyUid(null);
+    }
+  };
+
+  const handleDeleteUser = async (member: TeamMember) => {
+    if (
+      !window.confirm(
+        `¿Estás seguro de eliminar permanentemente al usuario "@${member.username}" (${member.displayName})?`
+      )
+    ) {
+      return;
+    }
+    setBusyUid(member.uid);
+    try {
+      await deleteTeamMemberAccount(member.uid);
+      setNotice(`Usuario "@${member.username}" eliminado correctamente.`);
+    } catch (err) {
+      setNotice(
+        err instanceof Error ? err.message : 'No se pudo eliminar el usuario.'
+      );
     } finally {
       setBusyUid(null);
     }
@@ -510,6 +534,16 @@ export function TeamManagementView({
                             className="text-xs font-medium text-slate-700 hover:underline disabled:opacity-50"
                           >
                             {u.active ? 'Suspender' : 'Reactivar'}
+                          </button>
+                        )}
+                        {isDeveloper && u.role !== 'developer' && (
+                          <button
+                            type="button"
+                            disabled={busyUid === u.uid}
+                            onClick={() => void handleDeleteUser(u)}
+                            className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+                          >
+                            Eliminar
                           </button>
                         )}
                       </td>

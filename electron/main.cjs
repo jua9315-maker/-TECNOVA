@@ -2,9 +2,13 @@ const { app, BrowserWindow, shell } = require('electron');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
 
 const APP_PORT = 41731;
+const LAN_BRIDGE_PORT = 41732;
 const DIST_DIR = path.join(__dirname, '..', 'dist');
+const SESSION_PIN = String(crypto.randomInt(100000, 999999));
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -26,7 +30,56 @@ const MIME_TYPES = {
 };
 
 let server = null;
+let lanServer = null;
+let activeLanPort = null;
+let lastPhonePingAt = 0;
+let totalLanScans = 0;
+const sseClients = new Set();
 let mainWindow = null;
+
+function getLanIpv4Addresses() {
+  const interfaces = os.networkInterfaces();
+  const candidates = [];
+  for (const [name, list] of Object.entries(interfaces)) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (!item || item.family !== 'IPv4' || item.internal) continue;
+      const addr = item.address;
+      if (!addr || addr.startsWith('169.254.')) continue;
+      let score = 10;
+      if (addr.startsWith('192.168.')) score = 100;
+      else if (addr.startsWith('10.')) score = 80;
+      else if (addr.startsWith('172.')) score = 50;
+      if (/wi-fi|wifi|wlan|ethernet/i.test(name)) score += 20;
+      if (/virtual|vmware|vbox|hyper-v|vethernet|docker|wsl/i.test(name)) score -= 60;
+      candidates.push({ address: addr, name, score });
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  return Array.from(new Set(candidates.map((c) => c.address)));
+}
+
+function sendJson(res, statusCode, payload) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  });
+  res.end(JSON.stringify(payload));
+}
+
+function broadcastScanEvent(eventPayload) {
+  const serialized = `event: scan\ndata: ${JSON.stringify(eventPayload)}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(serialized);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
 
 function resolveAssetPath(requestUrl) {
   const cleanUrl = (requestUrl || '/').split('?')[0].split('#')[0];
@@ -50,25 +103,29 @@ function resolveAssetPath(requestUrl) {
   return path.join(DIST_DIR, 'index.html');
 }
 
+function serveStaticFile(req, res) {
+  const filePath = resolveAssetPath(req.url);
+  const ext = path.extname(filePath).toLowerCase();
+  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+  fs.readFile(filePath, (err, content) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Archivo no encontrado');
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000',
+    });
+    res.end(content);
+  });
+}
+
 function startStaticServer() {
   return new Promise((resolve, reject) => {
     const httpServer = http.createServer((req, res) => {
-      const filePath = resolveAssetPath(req.url);
-      const ext = path.extname(filePath).toLowerCase();
-      const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-
-      fs.readFile(filePath, (err, content) => {
-        if (err) {
-          res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-          res.end('Archivo no encontrado');
-          return;
-        }
-        res.writeHead(200, {
-          'Content-Type': contentType,
-          'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000',
-        });
-        res.end(content);
-      });
+      serveStaticFile(req, res);
     });
 
     httpServer.on('error', (err) => {
@@ -89,7 +146,157 @@ function startStaticServer() {
   });
 }
 
-function createMainWindow(port) {
+function startLanBridgeServer() {
+  return new Promise((resolve) => {
+    const bridge = http.createServer((req, res) => {
+      const parsedUrl = new URL(req.url || '/', 'http://127.0.0.1');
+      const pathname = parsedUrl.pathname;
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        });
+        res.end();
+        return;
+      }
+
+      if (pathname === '/api/lan-scanner/info' && req.method === 'GET') {
+        const ips = getLanIpv4Addresses();
+        const port = activeLanPort || LAN_BRIDGE_PORT;
+        const urls = ips.map(
+          (ip) => `http://${ip}:${port}/?mobile-scanner=1&pin=${SESSION_PIN}`
+        );
+        const phoneConnected = Date.now() - lastPhonePingAt < 25000;
+        sendJson(res, 200, {
+          ok: true,
+          port,
+          pin: SESSION_PIN,
+          ips,
+          urls,
+          phoneConnected,
+          totalScans: totalLanScans,
+          clients: sseClients.size,
+        });
+        return;
+      }
+
+      if (pathname === '/api/lan-scanner/verify' && req.method === 'GET') {
+        const pin = (parsedUrl.searchParams.get('pin') || '').trim();
+        if (pin !== SESSION_PIN) {
+          sendJson(res, 401, { ok: false, error: 'PIN incorrecto' });
+          return;
+        }
+        lastPhonePingAt = Date.now();
+        sendJson(res, 200, {
+          ok: true,
+          appName: 'TECNOVA',
+          totalScans: totalLanScans,
+        });
+        return;
+      }
+
+      if (pathname === '/api/lan-scanner/stream' && req.method === 'GET') {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.write(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`);
+        sseClients.add(res);
+
+        const heartbeat = setInterval(() => {
+          try {
+            res.write(': ping\n\n');
+          } catch {
+            clearInterval(heartbeat);
+            sseClients.delete(res);
+          }
+        }, 15000);
+
+        req.on('close', () => {
+          clearInterval(heartbeat);
+          sseClients.delete(res);
+        });
+        return;
+      }
+
+      if (pathname === '/api/lan-scanner/push' && req.method === 'POST') {
+        let rawBody = '';
+        let aborted = false;
+        req.on('data', (chunk) => {
+          rawBody += chunk;
+          if (rawBody.length > 4096) {
+            aborted = true;
+            sendJson(res, 413, { ok: false, error: 'Solicitud demasiado grande' });
+            req.destroy();
+          }
+        });
+        req.on('end', () => {
+          if (aborted) return;
+          try {
+            const parsed = JSON.parse(rawBody || '{}');
+            const pin = String(parsed.pin || '').trim();
+            const code = String(parsed.code || '').trim().slice(0, 128);
+            const mode = parsed.mode === 'pos' ? 'pos' : 'inventory';
+            if (pin !== SESSION_PIN) {
+              sendJson(res, 401, { ok: false, error: 'PIN de enlace inválido' });
+              return;
+            }
+            if (!code) {
+              sendJson(res, 400, { ok: false, error: 'Código vacío' });
+              return;
+            }
+            lastPhonePingAt = Date.now();
+            totalLanScans += 1;
+            const eventPayload = {
+              code,
+              mode,
+              timestamp: Date.now(),
+              id: totalLanScans,
+            };
+            broadcastScanEvent(eventPayload);
+            if (mainWindow && mainWindow.isMinimized()) {
+              mainWindow.restore();
+            }
+            sendJson(res, 200, {
+              ok: true,
+              delivered: sseClients.size,
+              event: eventPayload,
+            });
+          } catch {
+            sendJson(res, 400, { ok: false, error: 'JSON inválido' });
+          }
+        });
+        return;
+      }
+
+      serveStaticFile(req, res);
+    });
+
+    bridge.on('error', (err) => {
+      if (err && err.code === 'EADDRINUSE') {
+        bridge.listen(0, '0.0.0.0', () => {
+          const address = bridge.address();
+          activeLanPort = address && typeof address === 'object' ? address.port : null;
+          resolve(bridge);
+        });
+        return;
+      }
+      resolve(null);
+    });
+
+    bridge.listen(LAN_BRIDGE_PORT, '0.0.0.0', () => {
+      const address = bridge.address();
+      activeLanPort = address && typeof address === 'object' ? address.port : LAN_BRIDGE_PORT;
+      resolve(bridge);
+    });
+  });
+}
+
+function createMainWindow(port, lanPort) {
   const iconPath = path.join(DIST_DIR, 'pwa-512x512.png');
 
   mainWindow = new BrowserWindow({
@@ -119,7 +326,10 @@ function createMainWindow(port) {
     return { action: 'allow' };
   });
 
-  void mainWindow.loadURL(`http://127.0.0.1:${port}/`);
+  const targetUrl = lanPort
+    ? `http://127.0.0.1:${port}/?lanBridgePort=${lanPort}`
+    : `http://127.0.0.1:${port}/`;
+  void mainWindow.loadURL(targetUrl);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -142,7 +352,8 @@ if (!gotSingleInstanceLock) {
     try {
       const started = await startStaticServer();
       server = started.server;
-      createMainWindow(started.port);
+      lanServer = await startLanBridgeServer();
+      createMainWindow(started.port, activeLanPort);
     } catch (err) {
       console.error('Error al iniciar TECNOVA:', err);
       app.quit();
@@ -156,6 +367,18 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    for (const client of sseClients) {
+      try {
+        client.end();
+      } catch {
+        // ignore
+      }
+    }
+    sseClients.clear();
+    if (lanServer) {
+      lanServer.close();
+      lanServer = null;
+    }
     if (server) {
       server.close();
       server = null;

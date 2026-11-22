@@ -568,28 +568,7 @@ export function mixHexWithWhite(hexOrGradient: string, whiteRatio = 0.9): string
   return `#${[mr, mg, mb].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
 }
 
-export type AppCurrencyCode =
-  | 'USD'
-  | 'MXN'
-  | 'GTQ'
-  | 'HNL'
-  | 'NIO'
-  | 'CRC'
-  | 'PAB'
-  | 'DOP'
-  | 'COP'
-  | 'VES'
-  | 'PEN'
-  | 'BOB'
-  | 'PYG'
-  | 'UYU'
-  | 'ARS'
-  | 'CLP'
-  | 'BRL'
-  | 'CAD'
-  | 'EUR'
-  | 'GBP'
-  | 'CHF';
+export type AppCurrencyCode = 'USD' | 'NIO';
 
 export interface AppCurrencyOption {
   code: AppCurrencyCode;
@@ -600,26 +579,7 @@ export interface AppCurrencyOption {
 
 export const APP_CURRENCY_OPTIONS: AppCurrencyOption[] = [
   { code: 'USD', symbol: '$', label: 'Dólar Estadounidense (USD $)', locale: 'en-US' },
-  { code: 'MXN', symbol: '$', label: 'Peso Mexicano (MXN $)', locale: 'es-MX' },
-  { code: 'GTQ', symbol: 'Q', label: 'Quetzal Guatemalteco (GTQ Q)', locale: 'es-GT' },
-  { code: 'HNL', symbol: 'L', label: 'Lempira Hondureño (HNL L)', locale: 'es-HN' },
   { code: 'NIO', symbol: 'C$', label: 'Córdoba Nicaragüense (NIO C$)', locale: 'es-NI' },
-  { code: 'CRC', symbol: '₡', label: 'Colón Costarricense (CRC ₡)', locale: 'es-CR' },
-  { code: 'PAB', symbol: 'B/.', label: 'Balboa Panameño (PAB B/.)', locale: 'es-PA' },
-  { code: 'DOP', symbol: 'RD$', label: 'Peso Dominicano (DOP RD$)', locale: 'es-DO' },
-  { code: 'COP', symbol: '$', label: 'Peso Colombiano (COP $)', locale: 'es-CO' },
-  { code: 'VES', symbol: 'Bs.', label: 'Bolívar Venezolano (VES Bs.)', locale: 'es-VE' },
-  { code: 'PEN', symbol: 'S/', label: 'Sol Peruano (PEN S/)', locale: 'es-PE' },
-  { code: 'BOB', symbol: 'Bs', label: 'Boliviano (BOB Bs)', locale: 'es-BO' },
-  { code: 'PYG', symbol: '₲', label: 'Guaraní Paraguayo (PYG ₲)', locale: 'es-PY' },
-  { code: 'UYU', symbol: '$U', label: 'Peso Uruguayo (UYU $U)', locale: 'es-UY' },
-  { code: 'ARS', symbol: '$', label: 'Peso Argentino (ARS $)', locale: 'es-AR' },
-  { code: 'CLP', symbol: '$', label: 'Peso Chileno (CLP $)', locale: 'es-CL' },
-  { code: 'BRL', symbol: 'R$', label: 'Real Brasileño (BRL R$)', locale: 'pt-BR' },
-  { code: 'CAD', symbol: 'CA$', label: 'Dólar Canadiense (CAD CA$)', locale: 'en-CA' },
-  { code: 'EUR', symbol: '€', label: 'Euro (EUR €)', locale: 'es-ES' },
-  { code: 'GBP', symbol: '£', label: 'Libra Esterlina (GBP £)', locale: 'en-GB' },
-  { code: 'CHF', symbol: 'CHF', label: 'Franco Suizo (CHF)', locale: 'de-CH' },
 ];
 
 export function getCurrencyOption(code?: AppCurrencyCode | string): AppCurrencyOption {
@@ -641,6 +601,7 @@ export interface AppAppearanceSettings {
   headerBgColor: string;
   canvasBgColor: string;
   currencyCode: AppCurrencyCode;
+  exchangeRateNio?: number;
   updatedAtMs?: number;
 }
 
@@ -656,6 +617,7 @@ export const DEFAULT_APP_APPEARANCE_SETTINGS: AppAppearanceSettings = {
   headerBgColor: '#ffffff',
   canvasBgColor: '#f8fafc',
   currencyCode: 'USD',
+  exchangeRateNio: 36.62,
 };
 
 export interface VisualElementPatch {
@@ -1070,11 +1032,13 @@ export function addMonthsToDateKey(dateKey: string, months: number): string {
 
 let activeCurrencyCode: AppCurrencyCode = 'USD';
 let activeCurrencyLocale = 'en-US';
+let activeExchangeRateNio = 36.62;
 
-export function setActiveAppCurrency(code: AppCurrencyCode): void {
+export function setActiveAppCurrency(code: AppCurrencyCode, exchangeRateNio = 36.62): void {
   const found = getCurrencyOption(code);
   activeCurrencyCode = found.code;
   activeCurrencyLocale = found.locale;
+  activeExchangeRateNio = exchangeRateNio > 0 ? exchangeRateNio : 36.62;
 }
 
 export function getActiveAppCurrencyOption(): AppCurrencyOption {
@@ -1083,21 +1047,26 @@ export function getActiveAppCurrencyOption(): AppCurrencyOption {
 
 export function formatCurrency(
   amount: number,
-  overrideCode?: AppCurrencyCode
+  overrideCode?: AppCurrencyCode,
+  overrideRate?: number
 ): string {
   const safeAmount = Number.isFinite(amount) ? amount : 0;
   const opt = overrideCode
     ? getCurrencyOption(overrideCode)
     : { code: activeCurrencyCode, locale: activeCurrencyLocale, symbol: '$' };
+  
+  const rate = overrideRate ?? (opt.code === 'NIO' ? activeExchangeRateNio : 1);
+  const converted = safeAmount * rate;
+
   try {
     return new Intl.NumberFormat(opt.locale, {
       style: 'currency',
       currency: opt.code,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(safeAmount);
+    }).format(converted);
   } catch {
-    return `${opt.code} ${safeAmount.toFixed(2)}`;
+    return `${opt.code} ${converted.toFixed(2)}`;
   }
 }
 
